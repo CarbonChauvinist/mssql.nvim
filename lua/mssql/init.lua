@@ -814,7 +814,7 @@ local M = {
 					return "Connected"
 				end
 
-				local db = connect_params.connection.options.database
+				local db = utils.get_database_name(connect_params.connection.options.database)
 				local server = connect_params.connection.options.server
 				if not (db or server) then
 					return "Connected"

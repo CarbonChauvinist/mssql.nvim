@@ -38,14 +38,14 @@ end
 
 local get_session_async = function(client, connection_options)
 	connection_options.ServerName = connection_options.server
-	connection_options.DatabaseName = connection_options.database
+	connection_options.DatabaseName = utils.get_database_name(connection_options.database)
 	connection_options.UserName = connection_options.user
 	connection_options.EnclaveAttestationProtocol = connection_options.attestationProtocol
 
 	-- For some reason, if there is no display name set on the connection parameters then
 	-- the language server will treat this as a default/system database:
 	-- https://github.com/microsoft/sqltoolsservice/blob/49036c6196e73c3791bca5d31e97a16afee00772/src/Microsoft.SqlTools.ServiceLayer/ObjectExplorer/ObjectExplorerService.cs#L537
-	connection_options.DatabaseDisplayName = connection_options.DatabaseDisplayName or connection_options.database
+	connection_options.DatabaseDisplayName = connection_options.DatabaseDisplayName or utils.get_database_name(connection_options.database)
 
 	utils.lsp_request_async(client, "objectexplorer/createsession", connection_options)
 	local response, err = wait_for_notification_async(client, "objectexplorer/sessioncreated", 10000)

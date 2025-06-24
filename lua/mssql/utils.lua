@@ -282,4 +282,11 @@ return {
 	register_lsp_handler = register_lsp_handler,
 
 	unregister_lsp_handler = unregister_lsp_handler,
+
+    -- Returns the database name or 'master' if nil/empty
+    -- @param db_param string|nil
+    -- @return string
+	get_database_name = function(db_param)
+		return (db_param and db_param ~= "") and db_param or "master"
+	end
 }

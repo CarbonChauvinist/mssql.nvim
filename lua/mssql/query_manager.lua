@@ -92,6 +92,7 @@ return {
 				end
 
 				connect_params.ownerUri = owner_uri
+				connect_params.database = utils.get_database_name(connect_params.database)
 				state.set_state(states.Connecting)
 
 				local result, err
