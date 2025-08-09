@@ -285,6 +285,12 @@ end
 
 local view_message_options = {
 	notification = function(message, is_error)
+    local qm = vim.b.query_manager
+    local rows = string.match(message, "%((%d+ rows? affected)%)")
+    if rows and qm then
+        qm.set_rows_affected(rows)
+    end
+
 		if is_error then
 			utils.log_error(message)
 		else
@@ -292,6 +298,12 @@ local view_message_options = {
 		end
 	end,
 	buffer = function(message, is_error)
+    local qm = vim.b.query_manager
+    local rows = string.match(message, "%((%d+ rows? affected)%)")
+    if rows and qm then
+        qm.set_rows_affected(rows)
+    end
+
 		if not (message_buffer and vim.api.nvim_buf_is_valid(message_buffer)) then
 			message_buffer = vim.api.nvim_create_buf(false, false)
 			vim.api.nvim_buf_set_name(message_buffer, "sql messages")
@@ -832,6 +844,7 @@ local M = {
 				connect_to_default(query_manager, plugin_opts)
 			end
 			clear_message_buffer()
+            query_manager.clear_rows_affected()
 			local result = query_manager.execute_async(query)
 			if result then -- since cancelled query returns nil, have to check for nil before displaying
 				display_query_results(plugin_opts, result)
@@ -850,42 +863,73 @@ local M = {
 		end))
 	end,
 
-	lualine_component = {
-		function()
-			local qm = vim.b.query_manager
-			if not qm then
-				return
-			end
-			local state = qm.get_state()
-			if state == query_manager_module.states.Disconnected then
-				return "Disconnected"
-			elseif state == query_manager_module.states.Connecting then
-				return "Connecting..."
-			elseif state == query_manager_module.states.Executing then
-				return "Executing..."
-			elseif state == query_manager_module.states.Connected then
-				local connect_params = qm.get_connect_params()
-				if not (connect_params and connect_params.connection and connect_params.connection.options) then
-					return "Connected"
-				end
+    statusline_components = {
+      function()
+        local qm = vim.b.query_manager
+        local default = {
+          status = nil,
+          server = nil,
+          database = nil,
+          elapsed_time = nil,
+          rows_affected = nil,
+          caching = nil,
+        }
 
-				local db = connect_params.connection.options.database
-				local server = connect_params.connection.options.server
-				if not (db or server) then
-					return "Connected"
-				end
-				local caching = ""
-				if show_caching_in_status_line and qm.is_refreshing() then
-					caching = " (Caching database objects...)"
-				end
+        if not qm then
+          return default
+        end
 
-				return server .. " | " .. db .. caching
-			end
-		end,
-		cond = function()
-			return vim.b.query_manager ~= nil
-		end,
-	},
+        local format_elapsed_time_to_string = function(elapsed_time)
+          local hours = math.floor(elapsed_time / 3600)
+          local minutes = math.floor((elapsed_time % 3600) / 60)
+          local seconds = math.floor(elapsed_time % 60)
+          local ms = math.floor((elapsed_time % 1) * 1000)
+          if hours == 0 then
+            return string.format("%02d:%02d.%03d", minutes, seconds, ms)
+          else
+            return string.format("%02d:%02d:%02d.%03d", hours, minutes, seconds, ms)
+          end
+        end
+
+        local result = {}
+        local state = qm.get_state()
+        local connect_params = qm.get_connect_params()
+        local server = connect_params
+          and connect_params.connection
+          and connect_params.connection.options
+          and connect_params.connection.options.server
+        local database = connect_params
+          and connect_params.connection
+          and connect_params.connection.options
+          and connect_params.connection.options.database
+        local elapsed_time
+
+        local qm_states = require("mssql.query_manager").states
+        if state == qm_states.Executing then
+          elapsed_time = qm.get_current_query_elapsed_time()
+        else
+          elapsed_time = qm.get_last_query_elapsed_time()
+        end
+
+        result.status = state
+        result.server = server
+        result.database = database
+        result.elapsed_time = elapsed_time and format_elapsed_time_to_string(elapsed_time) or nil
+        result.rows_affected = qm.get_rows_affected()
+
+        if show_caching_in_status_line and qm.is_refreshing() then
+          result.caching = " (Caching database objects...)"
+        else
+          result.caching = ""
+        end
+
+        return result
+      end,
+
+      cond = function()
+        return vim.b.query_manager ~= nil
+      end,
+    },
 
 	backup_database = function()
 		local query_manager = vim.b.query_manager

@@ -32,7 +32,40 @@ return {
 		local last_connect_params = {}
 		local owner_uri = utils.lsp_file_uri(bufnr)
 
+        local elapsed_time_timer = nil
+        local last_query_elapsed_time = nil
+        local current_query_elapsed_time = nil
+        local last_rows_affected = nil
+
+        local function stop_timer()
+          if elapsed_time_timer then
+            elapsed_time_timer:stop()
+            elapsed_time_timer:close()
+            elapsed_time_timer = nil
+          end
+        end
+
 		return {
+            get_rows_affected = function()
+                return last_rows_affected
+            end,
+
+            set_rows_affected = function(rows_str)
+                last_rows_affected = rows_str
+            end,
+
+            clear_rows_affected = function()
+                last_rows_affected = nil
+            end,
+
+            get_last_query_elapsed_time = function()
+                return last_query_elapsed_time
+            end,
+
+            get_current_query_elapsed_time = function()
+                return current_query_elapsed_time
+            end,
+
 			-- the owner uri gets added to the connect_params
 			connect_async = function(connect_params)
 				if state.get_state() ~= states.Disconnected then
@@ -81,6 +114,25 @@ return {
 				end
 				state.set_state(states.Executing)
 
+                local start_time = vim.loop.now()
+                last_query_elapsed_time = nil
+                current_query_elapsed_time = 0
+
+                stop_timer()
+
+                elapsed_time_timer = vim.loop.new_timer()
+                if elapsed_time_timer then
+                    elapsed_time_timer:start(0, 100, vim.schedule_wrap(function()
+                      if state.get_state() == states.Executing then
+                        current_query_elapsed_time = (vim.loop.now() - start_time) / 1000
+                        vim.cmd("redrawstatus")
+                      else
+                        stop_timer()
+                      end
+                    end
+                    ))
+                end
+
 				local result, err =
 					utils.lsp_request_async(client, "query/executeString", { query = query, ownerUri = owner_uri })
 
@@ -95,7 +147,12 @@ return {
 				end
 
 				result, err = utils.wait_for_notification_async(bufnr, client, "query/complete", 360000)
+
+                stop_timer()
+                last_query_elapsed_time = (vim.loop.now() - start_time) / 1000
+                current_query_elapsed_time = nil
 				state.set_state(states.Connected)
+                vim.cmd("redrawstatus")
 
 				-- handle cancellations that may be requested while waiting
 				if state.get_state() == states.Cancelling then
@@ -134,6 +191,7 @@ return {
 					error("There is no query being executed in the current buffer", 0)
 				end
 
+                stop_timer()
 				state.set_state(states.Cancelling)
 				-- let the waiting `execute_async` coroutine handle the 'query/complete' notification
 				utils.lsp_request_async(client, "query/cancel", { ownerUri = owner_uri })
