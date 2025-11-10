@@ -339,6 +339,13 @@ end
 local function setup_async(opts)
 	opts = opts or {}
 	opts = vim.tbl_deep_extend("keep", opts or {}, default_opts)
+
+	-- validate max_rows since now used for paginagtion
+	if type(opts.max_rows) ~= "number" or opts.max_rows <= 0 then
+		utils.log_info(string.format("Invalid max_rows value (%s). Defaulting to %d", tostring(opts.max_rows), default_opts.max_rows))
+		opts.max_rows = default_opts.max_rows
+	end
+
 	opts.connections_file = opts.connections_file or joinpath(opts.data_dir, "connections.json")
 	set_show_results_option(opts)
 	set_view_message_option(opts)
@@ -570,7 +577,7 @@ local function backup_database_async(query_manager)
 		[[BACKUP DATABASE [%s]
 -- Change to your backup location
 TO DISK = N'%s'
-WITH 
+WITH
 INIT, -- Remove if not overwriting
 STATS = 25]],
 		database,
@@ -674,7 +681,7 @@ end
 
 local function save_query_results_async(result_info)
 	utils.wait_for_schedule_async()
-	local success, lsp_client = pcall(utils.get_lsp_client, result_info.subset_params.ownerUri)
+	local success, lsp_client = pcall(utils.get_lsp_client, result_info.ownerUri)
 	if not success then
 		error("The buffer with the sql query has been closed, can't save query results")
 	end
@@ -687,9 +694,9 @@ local function save_query_results_async(result_info)
 
 	local params = {
 		FilePath = file,
-		BatchIndex = result_info.subset_params.batchIndex,
-		ResultSetIndex = result_info.subset_params.resultSetIndex,
-		OwnerUri = result_info.subset_params.ownerUri,
+		BatchIndex = result_info.batchIndex,
+		ResultSetIndex = result_info.resultSetIndex,
+		OwnerUri = result_info.ownerUri,
 		IncludeHeaders = true,
 		Formatted = true,
 	}
@@ -702,7 +709,7 @@ local function save_query_results_async(result_info)
 		method = "query/saveJson"
 	elseif file:match("%.xml$") then
 		method = "query/saveXml"
-	elseif file:match("%.xls$") or file:match("%.xlsx$") then
+	elseif file:match("%.xlsx?$") then
 		method = "query/saveExcel"
 		openAfterSave = false
 	else
@@ -834,7 +841,7 @@ local M = {
 			clear_message_buffer()
 			local result = query_manager.execute_async(query)
 			if result then -- since cancelled query returns nil, have to check for nil before displaying
-				display_query_results(plugin_opts, result)
+				display_query_results.display_query_results(plugin_opts, result)
 			end
 		end))
 	end,
@@ -853,37 +860,41 @@ local M = {
 	lualine_component = {
 		function()
 			local qm = vim.b.query_manager
-			if not qm then
-				return
-			end
-			local state = qm.get_state()
-			if state == query_manager_module.states.Disconnected then
-				return "Disconnected"
-			elseif state == query_manager_module.states.Connecting then
-				return "Connecting..."
-			elseif state == query_manager_module.states.Executing then
-				return "Executing..."
-			elseif state == query_manager_module.states.Connected then
-				local connect_params = qm.get_connect_params()
-				if not (connect_params and connect_params.connection and connect_params.connection.options) then
-					return "Connected"
-				end
+			local qri = vim.b.query_result_info
 
-				local db = connect_params.connection.options.database
-				local server = connect_params.connection.options.server
-				if not (db or server) then
-					return "Connected"
-				end
-				local caching = ""
-				if show_caching_in_status_line and qm.is_refreshing() then
-					caching = " (Caching database objects...)"
-				end
+			if qri then
+				return display_query_results.get_pagination_status()
+			elseif qm then
+				local state = qm.get_state()
+				if state == query_manager_module.states.Disconnected then
+					return "Disconnected"
+				elseif state == query_manager_module.states.Connecting then
+					return "Connecting..."
+				elseif state == query_manager_module.states.Executing then
+					return "Executing..."
+				elseif state == query_manager_module.states.Connected then
+					local connect_params = qm.get_connect_params()
+					if not (connect_params and connect_params.connection and connect_params.connection.options) then
+						return "Connected"
+					end
 
-				return server .. " | " .. db .. caching
+					local db = connect_params.connection.options.database
+					local server = connect_params.connection.options.server
+					if not db and not server then
+						return "Connected"
+					end
+
+					local caching = ""
+					if show_caching_in_status_line and qm.is_refreshing() then
+						caching = " (Caching database objects...)"
+					end
+
+					return server .. " | " .. db .. caching
+				end
 			end
 		end,
 		cond = function()
-			return vim.b.query_manager ~= nil
+			return vim.b.query_manager ~= nil or vim.b.query_result_info ~= nil
 		end,
 	},
 
@@ -911,6 +922,7 @@ local M = {
 
 	save_query_results = function()
 		local result_info = vim.b.query_result_info
+		--vim.notify("this is initial query results ds" .. vim.inspect(result_info))
 		if not result_info then
 			utils.log_error("Go to a query result buffer to save results")
 			return
@@ -951,7 +963,7 @@ local M = {
 			if plugin_opts.execute_generated_select_statements and item.select then
 				clear_message_buffer()
 				local result = query_manager.execute_async(item.script)
-				display_query_results(plugin_opts, result)
+				display_query_results.display_query_results(plugin_opts, result)
 			end
 			if callback then
 				callback()

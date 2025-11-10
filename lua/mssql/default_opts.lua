@@ -3,18 +3,18 @@ return {
 	keymap_prefix = nil,
 
 	--[[ How to open a buffer containing sql results.
-  Valid options are: 
+  Valid options are:
   "split"                   - Open results in a horizontal split
   "vsplit"                  - Open results in a vertical split
   "current_window"          - Open results in the current window
-  function (bufnr) ... end  - Function which takes the buffer number of the results buffer to open 
-                              (called for each results buffer if there are multiple). Use this 
+  function (bufnr) ... end  - Function which takes the buffer number of the results buffer to open
+                              (called for each results buffer if there are multiple). Use this
                               to open the buffer in a custom way
   --]]
 	open_results_in = "split",
 
 	--[[ Where to view messages sent from sql server (eg when executing queries)
-  Valid options are: 
+  Valid options are:
   "notification"                        - View as a vim notification
   "buffer"                              - View in a messages buffer
   function(message, is_error) ...       - Function which takes the message string and is_error boolean
@@ -54,6 +54,14 @@ return {
 
 	-- The filetype (used in neovim to determine the language) of buffers that show query results. Set this to "" to disable markdown rendering.
 	results_buffer_filetype = "markdown",
+
+	-- Keymaps for the results buffer (set to false to disable)
+	results_keymaps = {
+		prev_page = "<C-p>",
+		first_page = "<C-M-p>",
+		next_page = "<C-n>",
+		last_page = "<C-M-n>",
+	},
 
 	-- Path to a json connections file (see https://github.com/Kurren123/mssql.nvim?tab=readme-ov-file#connections-json-file)
 	-- If nil, it's stored in the data_dir

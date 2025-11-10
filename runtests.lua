@@ -23,7 +23,7 @@ vim.o.completeopt = "menu,menuone,noselect,noinsert"
 
 local src = vim.fn.stdpath("state")
 print_without_prompt("nvim state path: " .. src)
-vim.lsp.set_log_level("debug")
+vim.lsp.log.set_level(vim.log.levels.DEBUG)
 
 local function copy_state_folder()
 	if vim.env.GITHUB_ACTIONS == "true" then
@@ -69,6 +69,8 @@ local tests = {
 	require("tests.non_ascii_spec"),
 	require("tests.cancel_query_spec"),
 	require("tests.use_query_spec"),
+	require("tests.pagination_spec"),
+	require("tests.save_query_results_spec")
 }
 
 coroutine.resume(coroutine.create(function()
