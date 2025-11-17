@@ -64,6 +64,28 @@ M.wait_for_all_async = function(async_functions)
 	coroutine.yield()
 end
 
+--- Waits for connection
+--- The connect event is sent, then the intelliSenseReady event
+--- Wait for the intelliSenseReady event as this means the connection was successful
+---@param buf integer The buffer number to watch for the notification.
+---@param client vim.lsp.Client The LSP client to watch.
+---@param timeout_ms? integer How long to wait (default 30000).
+M.wait_for_intellisenseReady = function(buf, client, timeout_ms)
+	timeout_ms = timeout_ms or 30000
+
+	local result, err = utils.wait_for_notification_async(buf, client, "textDocument/intelliSenseReady", timeout_ms)
+	if err then
+		utils.log_error(err.message)
+	end
+
+	assert(result, "No result returned from textDocument/intelliSenseReady")
+	if result.errorMessage then
+		utils.log_error("Error returned from textDocument/intelliSenseReady: " .. result.errorMessage)
+	end
+
+	return result
+end
+
 --- Checks if a value exists in a table
 ---@param tbl table The table to search.
 ---@param val any The value to find.
@@ -115,7 +137,7 @@ M.get_buffer_content = function(bufnr)
 end
 
 --- Gets the current string from the mssql lualine component
----@return string
+---@return string?
 M.get_lualine_status = function()
 	local lualine_component_func = require("mssql").lualine_component[1]
 	if not lualine_component_func then
