@@ -31,7 +31,7 @@ return {
 	states = states,
 	-- creates a query manager, which
 	-- interacts with sql server while maintaining a state
-	create_query_manager = function(bufnr, client)
+	create_query_manager = function(bufnr, client, opts)
 		local state = new_state()
 		local last_connect_params = {}
 		local owner_uri = utils.lsp_file_uri(bufnr)
@@ -39,6 +39,7 @@ return {
 		---@type MssqlExecutionInfo
 		local last_execution_info = { rows_affected = nil, elapsed_time = nil }
 		local start_time = 0
+		local timeout = opts.query_timeout
 
 		--- Stops the timer and calculates the final, precise time from the start time.
 		---@return nil
@@ -202,7 +203,7 @@ return {
 					utils.log_info("Executing...")
 				end
 
-				result, err = utils.wait_for_notification_async(bufnr, client, "query/complete", 360000)
+				result, err = utils.wait_for_notification_async(bufnr, client, "query/complete", timeout)
 				stop_execution_timer()
 				state.set_state(states.Connected)
 				vim.cmd("redrawstatus")
@@ -210,14 +211,41 @@ return {
 				-- handle cancellations that may be requested while waiting
 				if state.get_state() == states.Cancelling then
 					stop_execution_timer()
+					state.set_state(states.Connected) -- set state back to connected AFTER cancelling
 					utils.log_info("Query was cancelled.")
 					return
 				end
 
+				-- on timeout, 'err' is set. We DO NOT set the state to Connected
+				-- we simply error, the state remains "Executing"
+				-- this allows the user to call cancel_async() successfully
 				if err then
 					stop_execution_timer()
 					error("Could not execute query: " .. vim.inspect(err), 0)
 				elseif not (result or result.batchSummaries) then
+					utils.log_error("Query execution timed out. Sending cancellation request...")
+					state.set_state(states.Cancelling)
+					utils.lsp_request_async(client, "query/cancel", { ownerUri = owner_uri })
+					-- wait for the server to confirm the cancel
+					-- we give this a separate, short timeout (e.g., 10 seconds)
+					local cancel_timeout_minutes = 10 / 60
+					local _, cancel_err = utils.wait_for_notification_async(bufnr, client, "query/complete", cancel_timeout_minutes)
+
+					if cancel_err then
+						utils.log_error("Did not receive cancel confirmation. Forcing state reset.")
+					else
+						utils.log_info("Cancellation confirmed.")
+					end
+
+					-- no matter what, reset the state and report *original* error
+					state.set_state(states.Connected)
+					error("Could not execute query: " .. vim.inspect(err), 0) -- rethrow the original timeout error
+				end
+
+				-- no error and no cancellation, so the query completed successfully
+				state.set_state(states.Connected)
+
+				if not (result or result.batchSummaries) then
 					error("Could not execute query: no results returned", 0)
 				end
 
@@ -243,7 +271,12 @@ return {
 
 			cancel_async = function()
 				if state.get_state() ~= states.Executing then
-					error("There is no query being executed in the current buffer", 0)
+					if state.get_state() == states.Cancelling then
+						error("Already cancelling query, please wait...", 0)
+					else
+						error("There is no query being executed in the current buffer", 0)
+					end
+					return
 				end
 
 				state.set_state(states.Cancelling)

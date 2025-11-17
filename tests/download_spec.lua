@@ -24,6 +24,7 @@ local function setup_async()
 	local co = coroutine.running()
 	mssql.setup({
 		open_results_in = "current_window",
+		query_timeout= 0.05 -- 3 seconds
 	}, function()
 		vim.schedule(function()
 			coroutine.resume(co)

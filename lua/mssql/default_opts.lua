@@ -34,6 +34,9 @@ return {
 	-- If a result row has a field text length larger than this it will be truncated when displayed
 	max_column_width = 100,
 
+	-- Timeout for query execution in minutes, use less than 0 or nil for no timeout
+	query_timeout = .1,
+
 	-- When choosing a table/view in the finder, immediately execute the generated SELECT statement
 	execute_generated_select_statements = true,
 

@@ -119,7 +119,7 @@ local function enable_lsp(opts)
 		},
 		on_attach = function(client, bufnr)
 			if not vim.b[bufnr].query_manager then
-				vim.b[bufnr].query_manager = query_manager_module.create_query_manager(bufnr, client)
+				vim.b[bufnr].query_manager = query_manager_module.create_query_manager(bufnr, client, opts)
 			end
 
 			-- see the wait_for_on_attach_async function below

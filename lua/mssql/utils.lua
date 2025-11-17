@@ -206,20 +206,24 @@ return {
 		end
 		register_lsp_handler(client, method, handler)
 
-		vim.defer_fn(function()
-			if not resumed then
-				resumed = true
-				unregister_lsp_handler(client, method, handler)
-				try_resume(
-					this,
-					nil,
-					vim.lsp.rpc_response_error(
-						vim.lsp.protocol.ErrorCodes.UnknownErrorCode,
-						"Waiting for the lsp to call " .. method .. " timed out for buffer " .. bufnr
+		-- Only schedule timeout if valid, positive timeout is provided
+		if timeout and timeout > 0 then
+			vim.defer_fn(function()
+				if not resumed then
+					resumed = true
+					unregister_lsp_handler(client, method, handler)
+					try_resume(
+						this,
+						nil,
+						vim.lsp.rpc_response_error(
+							vim.lsp.protocol.ErrorCodes.UnknownErrorCode,
+							"Waiting for the lsp to call " .. method .. " timed out for buffer " .. bufnr
+						)
 					)
-				)
-			end
-		end, timeout)
+				end
+			end, timeout * 60000)
+		end
+
 		return coroutine.yield()
 	end,
 	get_lsp_client = get_lsp_client,
