@@ -1,5 +1,18 @@
 {
-    "diagnostics.globals": [
-        "iif"
-    ]
+  "diagnostics.globals": [
+    "iif",
+    "vim"
+  ],
+  "diagnostics.unusedLocalExclude": [
+    "_*"
+  ],
+  "diagnostics.unusedFunctionExclude": [
+    "_*"
+  ],
+  "workspace.library": [
+    "$VIMRUNTIME/lua",
+    "$VIMRUNTIME/lua/vim/lsp",
+    "${3rd}/luv/library"
+  ]
 }
+
