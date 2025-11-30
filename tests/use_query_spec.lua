@@ -10,22 +10,16 @@ return {
 		mssql.execute_query(buf)
 
 		local current_db = ""
-		local attempts = 0
-		local max_attempts = 50 -- 5 seconds
-		while attempts < max_attempts do
-			test_utils.defer_async(100)
+		local switch_success = test_utils.poll(function()
 			local params = qm and qm:get_connect_params()
 			if params and params.connection and params.connection.options then
 				current_db = params.connection.options.database
 			end
 
-			if current_db == "TestDbB" then
-				break
-			end
-			attempts= attempts + 1
-		end
+			return current_db == "TestDbB"
+		end)
 
-		assert(current_db == "TestDbB", "Expected database to be TestDbB but instead it's " .. tostring(current_db))
+		assert(switch_success, "Database switch timed out. Expected 'TestDbB', but got: " .. tostring(current_db))
 		cleanup()
 	end,
 }

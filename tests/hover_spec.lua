@@ -11,31 +11,26 @@ return {
     -- "Car" starts at col 14 (0-indexed: 14)
     vim.api.nvim_win_set_cursor(0, { 1, 14 })
 
-	local result
-	local attempts = 0
-	local max_attempts = 20 -- 2 seconds (20 * 100ms)
+	local hover_contents
+	local hover_success = test_utils.poll(function()
+			local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
+			local response, _ = client.request_sync("textDocument/hover", params, 1000, buf)
 
-	while attempts < max_attempts do
-		local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-		local response, _ = client.request_sync("textDocument/hover", params, 1000, buf)
+			if response and response.result and response.result.contents then
+				hover_contents = response.result.contents
+				return true
+			end
 
-		if response and response.result and response.result.contents then
-			result = response.result
-			break
-		end
+			return false
+		end)
 
-		test_utils.defer_async(100)
-		attempts = attempts + 1
-	end
+	assert(hover_success, "Timeout: Hover returned no result after 2 seconds.")
 
-	assert(result, "Timeout: Hover returned no result after 2 seconds.")
-
-    local contents = result.contents
 	local hover_text = ""
-	if type(contents) == "table" and contents[1] then
-		hover_text = contents[1].value
-	elseif type(contents) == "table" and contents.value then
-		hover_text = contents.value
+	if type(hover_contents) == "table" and hover_contents[1] then
+		hover_text = hover_contents[1].value
+	elseif type(hover_contents) == "table" and hover_contents.value then
+		hover_text = hover_contents.value
 	end
 
 	assert(

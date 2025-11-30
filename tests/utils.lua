@@ -47,22 +47,13 @@ end
 local wait_for_buffer_content = function(bufnr, opts)
 	opts = opts or {}
 	local timeout_ms = opts.timeout_ms or 5000
-	return vim.wait(timeout_ms, function()
+	return M.poll(function()
 		if not vim.api.nvim_buf_is_valid(bufnr) then
 			return false
 		end
-
-		-- get all lines. If there's more than one line, or the first line isn't empty string
 		local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-		if #lines > 1 then
-			return true
-		end
-		if #lines == 1 and lines[1] ~= "" then
-			return true
-		end
-
-		return false
-	end, 100)
+		return #lines > 1 or (#lines == 1 and lines[1] ~= "")
+	end, { timeout_ms = timeout_ms, interval_ms = 100 })
 end
 
 --- Calculates the visual display column of every '|' character in a string.
@@ -219,19 +210,13 @@ M.wait_for_results_buffer = function(opts)
 	opts = opts or {}
 	local timeout_ms = opts.timeout_ms or 5000
 	local res_buf
-	local attempts = 0
-	local max_attempts = timeout_ms / 100
 
-	while attempts < max_attempts do
+	local success = M.poll(function()
 		res_buf = get_results_buffer()
-		if res_buf then
-			break
-		end
-		M.defer_async(100)
-		attempts = attempts + 1
-	end
+		return res_buf ~= nil
+	end, { timeout_ms = timeout_ms, interval_ms = 100 })
 
-	if not res_buf then
+	if not success then
 		error(string.format("Timeout: Results buffer did not appear within %d seconds.", timeout_ms / 1000))
 	end
 
@@ -403,13 +388,13 @@ M.wait_for_lsp_attach = function(buf, opts)
 	local timeout_ms = opts.timeout_ms or 15000
 	local client
 	utils.log_info("Waiting for LSP to attach...")
-	local success = vim.wait(timeout_ms, function()
-		client = vim.lsp.get_clients({name = "mssql_ls", bufnr = buf})[1]
+	local success = M.poll(function()
+		client = vim.lsp.get_clients({ name = "mssql_ls", bufnr = buf })[1]
 		return client ~= nil
-	end, 100)
+	end, { timeout_ms = timeout_ms, interval_ms = 100 })
 
 	if not success then
-		error("LSP client did not attach within 15s")
+		error("LSP client did not attach within " .. (timeout_ms/1000) .. "s")
 	end
 
 	return client
@@ -478,8 +463,6 @@ end
 M.wait_for_cache_content = function(item_label, opts)
 	opts = opts or {}
 	local timeout_ms = opts.timeout or 30000
-	local interval_ms = 100
-	local max_attempts = math.ceil(timeout_ms / interval_ms)
 
 	local cache_info = {
 		size = 0,
@@ -521,17 +504,9 @@ M.wait_for_cache_content = function(item_label, opts)
 		return false
 	end
 
-	for attempt = 1, max_attempts do
-		if check_cache() then
-			return true
-		end
+	local success = M.poll(check_cache, { timeout_ms = timeout_ms, interval = 100 })
 
-		if attempt < max_attempts then
-			M.defer_async(interval_ms)
-		end
-	end
-
-	if opts.debug then
+	if not success then
 		local debug_dump = {}
 		for i = 1, math.min(20, #cache_info.items) do
 			local item = cache_info.items[i]
@@ -553,7 +528,7 @@ M.wait_for_cache_content = function(item_label, opts)
 		error(table.concat(msg, ". "))
 	end
 
-	return false
+	return true
 end
 
 --- Safely deletes a given buffer

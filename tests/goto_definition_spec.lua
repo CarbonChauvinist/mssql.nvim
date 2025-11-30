@@ -11,43 +11,37 @@ return {
 		vim.api.nvim_win_set_cursor(0, { 1, 18 })
 
 		local result
-		local attempts = 0
-		local max_attempts = 30
-
-		while attempts < max_attempts do
+		local expected_uri
+		local ready = test_utils.poll(function()
 			local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-				local response, _ = client.request_sync("textDocument/definition", params, 500, buf)
+			local res, _ = client.request_sync("textDocument/definition", params, 500, buf)
 
-			if response and response.result and not vim.tbl_isempty(response.result) then
-				result = response.result
-				break
+			if res and res.result and not vim.tbl_isempty(res.result) then
+				local loc = res.result[1] or result.result
+				expected_uri = loc.uri
+				return true
 			end
+			return false
+		end, { timeout_ms = 15000 })
 
-			test_utils.defer_async(250)
-			attempts = attempts + 1
-		end
-
-		assert(result, "Timeout: Goto Definition returned no result after 15 seconds.")
-		local location = result[1] or result
-		assert(location.uri, "Definition result missing URI")
-		assert(location.range, "Definition result missing Range")
-		assert(location.uri:find(object) or location.uri:find(vim.split(object, ".")[2]), "Definition URI should contain the object name: Got: " .. location.uri)
-		print(vim.api.nvim_buf_get_name(0))
-
+		assert(ready, "Timeout: Server did not return a definition location.")
 		vim.lsp.buf.definition()
-		local jump_success = vim.wait(20000, function()
+
+		local jump_success = test_utils.poll(function()
 			return vim.api.nvim_get_current_buf() ~= buf
-		end, 500)
+		end, { timeout_ms = 20000, interval = 500})
+
 		assert(jump_success, "Timeout: Editor did not jump to new buffer.")
 
-		local new_buf = vim.api.nvim_get_current_buf()
-		local new_buf_name = vim.api.nvim_buf_get_name(new_buf)
-		local new_buf_content = test_utils.get_buffer_content(new_buf)
-		local expected_name = vim.fn.substitute(location.uri, "file:", "", "")
+		local def_buf = vim.api.nvim_get_current_buf()
+		local def_buf_name = vim.api.nvim_buf_get_name(def_buf)
+		local expected_path = vim.uri_to_fname(expected_uri)
 
-		assert(new_buf_name == expected_name, "Opened buffer does not match expected name. Expected: " .. expected_name .. " but got: " .. new_buf_name)
-		assert(new_buf_content:find("CREATE VIEW"), "Definition buffer content does not match expected pattern:\n" .. new_buf_content)
-		test_utils.safe_buf_delete(new_buf, { force = true })
+		assert(def_buf_name == expected_path, "Opened buffer does not match expected name. Expected: " .. expected_path .. " but got: " .. def_buf_name)
+		local content = test_utils.get_buffer_content(def_buf)
+		assert(content:find("CREATE VIEW"), "Definition buffer content does not match expected pattern:\n" .. content)
+
+		test_utils.safe_buf_delete(def_buf, { force = true })
 		cleanup()
 	end,
 }

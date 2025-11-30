@@ -4,20 +4,20 @@ return {
     test_name = "LSP should publish diagnostics for syntax errors",
     run_test_async = function()
         local buf, _, _, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
+		local query = "SELEC * FROM SomeTable" -- Typo 'SELEC'
 
-        local query = "SELEC * FROM SomeTable" -- Typo 'SELEC'
         vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
 
         local diags = {}
-        local attempts = 0
-        while attempts < 30 do -- Wait up to 3s
-            diags = vim.diagnostic.get(buf)
-            if #diags > 0 then break end
-            test_utils.defer_async(100)
-            attempts = attempts + 1
-        end
+		local diags_found = test_utils.poll(function()
+			diags = vim.diagnostic.get(buf)
+			if #diags > 0 then
+				return true
+			end
+			return false
+		end, { timeout_ms = 3000 })
 
-        assert(#diags > 0, "No diagnostics found for invalid SQL")
+        assert(diags_found, "No diagnostics found for invalid SQL")
 
         local found_error = false
         for _, d in ipairs(diags) do

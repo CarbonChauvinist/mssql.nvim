@@ -24,22 +24,18 @@ return {
 
 			test_utils.wait_for_status(expected_status, { timeout_ms = 3000 })
 
-			local found_content = false
 			local content = ""
-			local attempts = 0
 
-			while attempts < 20 do
-				local _, status, text = test_utils.res_buf_catcher({res_buf = res_buf})
+			local found_content = test_utils.poll(function()
+				local _, status, text = test_utils.res_buf_catcher({ res_buf = res_buf })
 				if status and text then
 					content = text
 					if content:find(expected_car) then
-						found_content = true
-						break
+						return true
 					end
 				end
-				test_utils.defer_async(100)
-				attempts = attempts + 1
-			end
+				return false
+			end)
 
 			assert(found_content,
 				"Page should contain '"
