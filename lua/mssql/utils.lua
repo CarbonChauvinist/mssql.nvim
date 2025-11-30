@@ -11,7 +11,15 @@ local register_lsp_handler = function(lsp_client, method, handler)
 
 	lsp_client.handlers[method] = function(err, result, ctx)
 		for custom_handler, _ in pairs(lsp_client.custom_handlers[method]) do
-			custom_handler(err, result, ctx)
+			-- Use pcall to ensure one crashing handler doesn't stop others
+			local success, msg = pcall(custom_handler, err, result, ctx)
+			if not success then
+				-- Log the error so we know something wrong, but keep going
+				-- Use vim.schedule to avoid interrupting the LSP client loop
+				vim.schedule(function()
+					vim.notify("MSSQL Handler Error: " .. tostring(msg), vim.log.levels.ERROR)
+				end)
+			end
 		end
 	end
 end
@@ -79,6 +87,9 @@ local try_resume =
 
 local lsp_file_uri = function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
+	if not vim.api.nvim_buf_is_valid(bufnr) then
+		return nil
+	end
 	local path = vim.api.nvim_buf_get_name(bufnr)
 	path = vim.fs.normalize(path)
 	path = vim.fs.abspath(path)
