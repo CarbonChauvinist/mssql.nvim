@@ -1,10 +1,35 @@
----@class IconsOpts
+---@class MssqlIcons
 ---@field enabled boolean
 ---@field disconnected string?
 ---@field server string?
 ---@field database string?
 
-return {
+---@class MssqlResultsKeymaps
+---@field prev_page string?
+---@field first_page string?
+---@field next_page string?
+---@field last_page string?
+
+---@class MssqlConfig
+---@field keymap_prefix string? Set up keymaps with this prefix.
+---@field open_results_in ("split"|"vsplit"|"current_window"|fun(bufnr: integer))? How to open the results buffer.
+---@field view_messages_in ("notification"|"buffer"|fun(msg: string, is_error: boolean))? Where to view SQL server messages.
+---@field max_rows integer? Max rows to return (default 100).
+---@field max_column_width integer? Max text length before truncation.
+---@field query_timeout integer? Timeout in seconds (nil or < 0 for no timeout).
+---@field execute_generated_select_statements boolean? Auto-execute SELECTs from finder.
+---@field lsp_settings table? Settings passed to mssql language server.
+---@field sql_buffer_options table<string, any>? Vim options for SQL buffers.
+---@field results_buffer_extension string? File extension for results (default "md").
+---@field results_buffer_filetype string? Filetype for results (default "markdown").
+---@field results_keymaps MssqlResultsKeymaps|boolean? Keymaps for results buffer (false to disable).
+---@field connections_file string? Path to connections.json.
+---@field tools_file string? Path to existing SQL tools binary.
+---@field data_dir string? Directory for tools and config.
+---@field icons MssqlIcons? Icon configuration.
+
+---@type MssqlConfig
+local M = {
 	-- Set up keymaps with this prefix. If which-key is found, this will be a which-key group.
 	keymap_prefix = nil,
 
@@ -34,8 +59,8 @@ return {
 	-- If a result row has a field text length larger than this it will be truncated when displayed
 	max_column_width = 100,
 
-	-- Timeout for query execution in minutes, use less than 0 or nil for no timeout
-	query_timeout = .1,
+	-- Timeout for query execution in seconds, use less than 0 or nil for no timeout
+	query_timeout = nil,
 
 	-- When choosing a table/view in the finder, immediately execute the generated SELECT statement
 	execute_generated_select_statements = true,
@@ -65,6 +90,7 @@ return {
 	results_buffer_filetype = "markdown",
 
 	-- Keymaps for the results buffer (set to false to disable)
+	---@type MssqlResultsKeymaps
 	results_keymaps = {
 		prev_page = "<C-p>",
 		first_page = "<C-M-p>",
@@ -84,7 +110,7 @@ return {
 	data_dir = vim.fs.joinpath(vim.fn.stdpath("data"), "/mssql.nvim"):gsub("[/\\]+$", ""),
 
 	-- Configuration for icons in default lualine component
-	---@type IconsOpts
+	---@type MssqlIcons
 	icons = {
 		enabled = false,
 		disconnected = "",
@@ -92,3 +118,5 @@ return {
 		database = "",
 	}
 }
+
+return M

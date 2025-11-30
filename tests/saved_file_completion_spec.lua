@@ -1,21 +1,14 @@
--- test completions on a saved file
-local utils = require("mssql.utils")
 local test_utils = require("tests.utils")
 
 return {
 	test_name = "LSP should be configured so that autocomplete works on saved sql files",
 	run_test_async = function()
-		vim.schedule(function()
-			vim.cmd("e tests/completion.sql")
-		end)
+		vim.cmd("edit tests/completion.sql")
+		local buf = vim.api.nvim_get_current_buf()
 
-		test_utils.defer_async(3000)
-		assert(#vim.lsp.get_clients({ bufnr = 0 }) == 1, "No lsp clients attached")
+		-- move to the first E in SELECT test for "SELECT"
+		test_utils.wait_for_completion_item(buf, "SELECT", { cursor = {1,1}})
 
-		-- move to the first E in SELECT
-		vim.api.nvim_win_set_cursor(0, { 1, 1 })
-		local items = test_utils.get_completion_items()
-		assert(#items > 0, "Neovim didn't provide any completion items")
-		assert(utils.contains(items, "SELECT"))
+		test_utils.safe_buf_delete(buf, {force = true})
 	end,
 }

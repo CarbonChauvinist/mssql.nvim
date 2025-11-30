@@ -1,42 +1,22 @@
 local mssql = require("mssql")
+local test_utils = require("tests.utils")
 
 return {
 	test_name = "Edit connections",
 	run_test_async = function()
 		mssql.edit_connections()
 
-		local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-		-- Assert that the connection json opens, and it has
-		-- some example text. Rather than asserting the exact text,
-		-- just do a weak assert of testing that a curly brace exists.
-		-- This will let us change the example without the test breaking
-		assert(
-			vim.iter(lines):any(function(line)
-				return line:find("{")
-			end),
-			"No json was found after calling edit_connections"
-		)
+		local buf = vim.api.nvim_get_current_buf()
+		-- this should be the default placeholder JSON created by plugin
+		local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+		-- just assert contents are valid JSON
+		local content = table.concat(lines, "\n")
+		local ok, result = pcall(vim.json.decode, content)
+		assert(ok, "Invalid JSON: " .. vim.inspect(result))
+		test_utils.safe_buf_delete(buf, {force = true})
 
-		local connections = string.format(
-			[[
-{
-  "master": {
-    "server": "%s",
-    "database": "%s",
-    "authenticationType": "SqlLogin",
-    "user": "%s",
-    "password": "%s",
-    "trustServerCertificate": true
-  }
-}
-]],
-			os.getenv("DbServer"),
-			os.getenv("DbDatabase"),
-			os.getenv("DbUser"),
-			os.getenv("DbPassword")
-		)
-
-		vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(connections, "\n"))
-		vim.cmd("w")
+		-- creates our default connections.json for our tests
+		local connections = test_utils.create_connection_json()
+		test_utils.write_connections_file(connections)
 	end,
 }

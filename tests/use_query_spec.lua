@@ -1,25 +1,31 @@
 local mssql = require("mssql")
-local utils = require("mssql.utils")
+local test_utils = require("tests.utils")
 
 return {
 	test_name = "Executing a USE statement should switch database",
 	run_test_async = function()
+		local buf, _, qm, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
 		local query = "USE TestDbB;"
-		vim.api.nvim_buf_set_lines(0, 0, -1, false, { query })
-		utils.wait_for_schedule_async()
-		mssql.execute_query()
-		local client = vim.lsp.get_clients({ name = "mssql_ls", bufnr = 0 })[1]
-		local buf = vim.api.nvim_get_current_buf()
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
+		mssql.execute_query(buf)
 
-		local _, err = utils.wait_for_notification_async(buf, client, "query/complete", 30000)
-		if err then
-			error(err.message)
+		local current_db = ""
+		local attempts = 0
+		local max_attempts = 50 -- 5 seconds
+		while attempts < max_attempts do
+			test_utils.defer_async(100)
+			local params = qm and qm:get_connect_params()
+			if params and params.connection and params.connection.options then
+				current_db = params.connection.options.database
+			end
+
+			if current_db == "TestDbB" then
+				break
+			end
+			attempts= attempts + 1
 		end
 
-		utils.defer_async(1000)
-		local db = vim.b[buf].query_manager.get_connect_params().connection.options.database
-		assert(db == "TestDbB", "Expected database to be TestDbB but instead it's " .. db)
-
-		vim.cmd("bdelete!")
+		assert(current_db == "TestDbB", "Expected database to be TestDbB but instead it's " .. tostring(current_db))
+		cleanup()
 	end,
 }

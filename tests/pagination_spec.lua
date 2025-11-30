@@ -1,129 +1,86 @@
 local mssql = require("mssql")
-local utils = require("mssql.utils")
 local test_utils = require("tests.utils")
 
 return {
 	test_name = "Pagination should fetch new pages and update statusline",
 	run_test_async = function()
-		-- 1. Create a new, valid SQL buffer for this test
-		local buf = vim.api.nvim_create_buf(true, false)
-		vim.api.nvim_set_option_value("filetype", "sql", {buf = buf})
-		vim.api.nvim_win_set_buf(0, buf)
-
-		-- 2. Override max_rows to 1 to force pagination
-		-- The seed.sql file creates 3 rows in TestDbB.dbo.Car
-		utils.log_info("Setting max_rows = 1")
+		-- Override max_rows to 1 to force pagination
 		test_utils.setup_mssql_async({ max_rows = 1 })
-		utils.wait_for_schedule_async()
+		local buf, _, _, cleanup = test_utils.test_scaffold({ target_db = "TestDbB" })
 
-		-- 3. wait for the new, restarted LSP client to attach to our buffer
-		local client
-		utils.log_info("Waiting for LSP to re-attach...")
-		local success = vim.wait(15000, function()
-			client = vim.lsp.get_clients({ name = "mssql_ls", bufnr = buf })[1]
-			return client ~= nil
-		end, 100)
-
-		if not success then
-			utils.log_error("LSP client did not re-attach within 15s after mssql.setup()")
-			return
-		end
-		utils.log_info("LSP re-attached, proceeding with tests.")
-
-		-- 4. Connect to the database
-		test_utils.ui_select_fake("master")
-		mssql.connect()
-		test_utils.wait_for_intellisenseReady(buf, client)
-		utils.log_info("Connected to database.")
-
-		-- 5. Execute query that returns 3 rows (from seed.sql)
+		-- Execute query that returns 3 rows (from seed.sql)
 		local query = "SELECT * FROM TestDbB.dbo.Car ORDER BY ID"
 		vim.api.nvim_buf_set_lines(0, 0, -1, false, { query })
-		utils.wait_for_schedule_async()
 		mssql.execute_query()
 
-		-- Wait for query to complete
-		local _, err = utils.wait_for_notification_async(buf, client, "query/complete", 30000)
-		if err then
-			error(err.message)
+		--- Helper for repetitive assertions
+		---@param res_buf integer Results buffer to parse
+		---@param expected_car string Car expected to be in single results row
+		---@param expected_status string Text expected to be found in status line
+		local function assert_page(res_buf, expected_car, expected_status)
+			if vim.api.nvim_get_current_buf() ~= res_buf then
+				vim.api.nvim_set_current_buf(res_buf)
+			end
+
+			test_utils.wait_for_status(expected_status, { timeout_ms = 3000 })
+
+			local found_content = false
+			local content = ""
+			local attempts = 0
+
+			while attempts < 20 do
+				local _, status, text = test_utils.res_buf_catcher({res_buf = res_buf})
+				if status and text then
+					content = text
+					if content:find(expected_car) then
+						found_content = true
+						break
+					end
+				end
+				test_utils.defer_async(100)
+				attempts = attempts + 1
+			end
+
+			assert(found_content,
+				"Page should contain '"
+				.. expected_car
+				.. "'. Status: "
+				.. expected_status
+				.. "\nGot Buffer Content:\n:"
+				.. (content or "nil")
+			)
+			local all_cars = {"Merc", "Ford", "Hyundai"}
+			for _, car in ipairs(all_cars) do
+				if car ~= expected_car then
+					assert(not content:find(car), "Page should NOT contain '" .. car .. "'")
+				end
+			end
 		end
-		test_utils.defer_async(2000)
 
-		-- 6. Check Page 1
-		utils.log_info("Checking Page 1")
-		local results_buf = test_utils.get_results_buffer()
-		assert(results_buf, "Could not find results buffer")
+		-- Initial Page (Page 1)
+		local res_buf = test_utils.res_buf_catcher()
+		vim.api.nvim_win_set_buf(0, res_buf)
+		assert_page(res_buf, "Merc", "Rows 1%-1 of 3")
 
-		-- Switch focus to the results buffer so lualine component updates
-		vim.api.nvim_set_current_buf(results_buf)
-		utils.wait_for_schedule_async()
-
-		local content_p1 = test_utils.get_buffer_content(results_buf)
-		local status_p1 = test_utils.get_lualine_status()
-
-		assert(content_p1:find("Merc"), "Page 1 should contain 'Merc'")
-		assert(not content_p1:find("Ford"), "Page 1 should NOT contain 'Ford'")
-		assert(not content_p1:find("Hyundai"), "Page 1 should NOT contain 'Hyundai'")
-		assert(status_p1:find("Rows 1%-1 of 3"), "Lualine status should be 'Rows 1-1 of 3', but was: " .. status_p1)
-
-		-- 7. Test '<C-n>' (Page Down)
-		utils.log_info("Checking Page 2 (pressing <C-n>)")
+		-- Next Page (Page 2)
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-n>", true, true, true), "x", false)
-		test_utils.wait_for_status("Rows 2%-2 of 3", 3000)
+		assert_page(res_buf, "Ford", "Rows 2%-2 of 3")
 
-		local content_p2 = test_utils.get_buffer_content(results_buf)
-		local status_p2 = test_utils.get_lualine_status()
-
-		assert(not content_p2:find("Merc"), "Page 2 should NOT contain 'Merc'")
-		assert(content_p2:find("Ford"), "Page 2 should contain 'Ford'")
-		assert(not content_p2:find("Hyundai"), "Page 2 should NOT contain 'Hyundai'")
-		assert(status_p2:find("Rows 2%-2 of 3"), "Lualine status should be 'Rows 2-2 of 3', but was: " .. status_p2)
-
-		-- 8. Test '<C-p>' (Page Up)
-		utils.log_info("Checking Page 1 again (pressing <C-p>)")
+		-- Previous Page (Page 1)
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-p>", true, true, true), "x", false)
-		test_utils.wait_for_status("Rows 1%-1 of 3", 3000)
+		assert_page(res_buf, "Merc", "Rows 1%-1 of 3")
 
-		local content_p3 = test_utils.get_buffer_content(results_buf)
-		local status_p3 = test_utils.get_lualine_status()
-
-		assert(content_p3:find("Merc"), "Page 1 (after <C-p>) should contain 'Merc'")
-		assert(not content_p3:find("Ford"), "Page 1 (after <C-p>) should NOT contain 'Ford'")
-		assert(not content_p3:find("Hyundai"), "Page 1 (after <C-p>) should NOT contain 'Hyundai'")
-		assert(status_p3:find("Rows 1%-1 of 3"), "Lualine status should be 'Rows 1-1 of 3', but was: " .. status_p3)
-
-		-- 9. Test '<C-M-n>' (Last Page)
-		utils.log_info("Checking Last Page (pressing <C-M-n>)")
+		-- Last Page (Page 3)
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-M-n>", true, true, true), "x", false)
-		test_utils.wait_for_status("Rows 3%-3 of 3", 3000)
+		assert_page(res_buf, "Hyundai", "Rows 3%-3 of 3")
 
-		local content_p4 = test_utils.get_buffer_content(results_buf)
-		local status_p4 = test_utils.get_lualine_status()
-
-		assert(not content_p4:find("Merc"), "Page 3 (after <C-M-n>) should NOT contain 'Merc'")
-		assert(not content_p4:find("Ford"), "Page 3 (after <C-M-n>) should NOT contain 'Ford'")
-		assert(content_p4:find("Hyundai"), "Page 3 (after <C-M-n>) should contain 'Hyundai'")
-		assert(status_p4:find("Rows 3%-3 of 3"), "Lualine status should be 'Rows 3-3 of 3', but was: " .. status_p4)
-
-		-- 10. Test '<C-M-p>' (First Page)
-		utils.log_info("Checking First Page (pressing <C-M-p>)")
+		-- First Page (Page 1)
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-M-p>", true, true, true), "x", false)
-		test_utils.wait_for_status("Rows 1%-1 of 3", 3000)
+		assert_page(res_buf, "Merc", "Rows 1%-1 of 3")
 
-		local content_p5 = test_utils.get_buffer_content(results_buf)
-		local status_p5 = test_utils.get_lualine_status()
-
-		assert(content_p5:find("Merc"), "Page 3 (after <C-M-p>) should contain 'Merc'")
-		assert(not content_p5:find("Ford"), "Page 3 (after <C-M-p>) should NOT contain 'Ford'")
-		assert(not content_p5:find("Hyundai"), "Page 3 (after <C-M-p>) should contain 'Hyundai'")
-		assert(status_p5:find("Rows 1%-1 of 3"), "Lualine status should be 'Rows 1-1 of 3', but was: " .. status_p5)
-
-		-- 11. Cleanup
-		utils.log_info("Cleaning up pagination test")
-		vim.api.nvim_buf_delete(results_buf, { force = true })
-		vim.api.nvim_set_current_buf(buf) -- Switch back to original query buffer
-		test_utils.setup_mssql_async({ max_rows = 100 }) -- Restore default max_rows
-		utils.log_info("Pagination test passed")
-		utils.wait_for_schedule_async()
+		test_utils.cleanup_results_buffer(res_buf)
+		vim.api.nvim_set_current_buf(buf)
+		test_utils.setup_mssql_async({ max_rows = 100 })
+		cleanup()
 	end,
 }

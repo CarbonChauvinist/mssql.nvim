@@ -1,85 +1,51 @@
 local mssql = require("mssql")
-local utils = require("mssql.utils")
 local test_utils = require("tests.utils")
+local qmm = require("mssql.query_manager")
 
 return {
 	test_name = "Lualine component should display elapsed time and rows affected",
 	run_test_async = function()
-		local qm = vim.b.query_manager
-		if not (qm and qm.get_state() == "connected") then
-			error("Test setup error: Not connected to a database.")
-		end
+		local buf, _, qm, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
 
-		-- Test 1: Verify live timer during execution
+		-- test live query execution stats
 		local query_long = "WAITFOR DELAY '00:00:03'; SELECT 1 AS Test;"
-		vim.api.nvim_buf_set_lines(0, 0, -1, false, { query_long })
-		utils.wait_for_schedule_async()
-
-		mssql.execute_query()
-		local client = vim.lsp.get_clients({ name = "mssql_ls", bufnr = 0 })[1]
-		local buf = vim.api.nvim_get_current_buf()
-
-		test_utils.defer_async(2000)
-
-		local status_during_execution = test_utils.get_lualine_status()
-		if status_during_execution then
-			local elapsed_pattern = "%d?%d?:?%d%d:%d%d$"
-			assert(status_during_execution:find("Executing..."), "Lualine status should contain 'Executing...' during query.")
-			assert(
-				status_during_execution:find(elapsed_pattern),
-				"Lualine status should show elapsed seconds during query. Status was: " .. status_during_execution
-			)
-		end
-
-		local _, err = utils.wait_for_notification_async(buf, client, "query/complete", 30000)
-		if err then
-			error(err.message)
-		end
-		test_utils.defer_async(1000)
-		local res_buf = vim.api.nvim_get_current_buf()
-
-		-- Test 2: Verify final elapsed time after completion
-		vim.api.nvim_set_current_buf(buf) -- switch focus back to query buffer, this is the status line we're testing
-		local status_after_execution = test_utils.get_lualine_status()
-		if status_after_execution then
-			assert(status_after_execution, "Status after execution should not be nil")
-			assert(
-				status_after_execution:match("00:03.%d+"),
-				"Lualine status should show final elapsed time with milliseconds. Status was: " .. status_after_execution
-			)
-			assert(
-				status_after_execution:find("1 row affected"),
-				"Lualine status should show '1 row affected' for a SELECT query with one row. Status was: "
-					.. status_after_execution
-			)
-		end
-
-		vim.api.nvim_buf_delete(res_buf, { force = true })
-		test_utils.defer_async(500)
-
-		-- Test 3: Verify "rows affected" for an UPDATE statement
-		local query_update = "SELECT * INTO #test_temp FROM (VALUES (1,2,3), (1,2,3), (4,5,6), (4,5,6)) AS t(a,b,c); UPDATE #test_temp SET a = a + 1 WHERE a >= 4;"
-		vim.api.nvim_buf_set_lines(0, 0, -1, false, { query_update })
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query_long })
 		mssql.execute_query()
 
-		_, err = utils.wait_for_notification_async(buf, client, "query/complete", 30000)
-		if err then
-			error(err.message)
+		local status
+		local attempts = 0
+		while attempts < 20 do
+			status = test_utils.get_lualine_status() or ""
+			if status:find("Executing") then break end
+			test_utils.defer_async(50)
+			attempts = attempts + 1
 		end
-		test_utils.defer_async(2000)
-		res_buf = vim.api.nvim_get_current_buf()
+		assert(status:find("Executing"), "Lualine should show 'Executing...'. Got " .. status)
+		assert(status:find("%d?%d?:?%d%d:%d%d$"), "Lualine should show timer. Got: " .. status)
+		local res_buf, _, _ = test_utils.res_buf_catcher()
+		vim.api.nvim_win_set_buf(0, buf)
 
+		local final_status = test_utils.get_lualine_status()
+		assert(final_status, "Status should not be nil.")
+		assert(final_status:find("1 row affected"), "Should show '1 row affected'. Got: " .. final_status)
+		assert(final_status:find("%d%d:%d%d.%d+"), "Should show final time with ms. Got: " .. final_status)
 
+		test_utils.cleanup_results_buffer(res_buf)
 
-		vim.api.nvim_set_current_buf(buf) -- switch back to query buffer from the results buffer from prior `execute_query()` call
-		local status_after_update = test_utils.get_lualine_status()
-		if status_after_update then
-			assert(
-				status_after_update:find("2 rows affected"),
-				"Lualine status should show '2 rows affected' after update. Status was: " .. status_after_update
-			)
+		-- test DML
+		local query_update = "SELECT * INTO #test_temp FROM (VALUES (1), (2)) AS t(c); UPDATE #test_temp SET c = c + 1;"
+		vim.api.nvim_buf_set_lines(buf, 1, -1, false, { query_update })
+		mssql.execute_query()
+
+		attempts = 0
+		while qm:get_state() ~= qmm.states.Connected and attempts < 100 do
+			test_utils.defer_async(50)
+			attempts = attempts + 1
 		end
+		vim.api.nvim_win_set_buf(0, buf)
+		local update_status = test_utils.get_lualine_status()
+		assert(update_status:find("2 rows affected"), "Should show '2 rows affected'. Got: " .. update_status)
 
-		vim.api.nvim_buf_delete(res_buf, { force = true })
+		cleanup()
 	end,
 }

@@ -1,19 +1,18 @@
-local utils = require("mssql.utils")
 local test_utils = require("tests.utils")
 
 return {
 	test_name = "Autocomplete should work after new_query()",
 	run_test_async = function()
 		require("mssql").new_query()
-		vim.api.nvim_buf_set_lines(vim.api.nvim_get_current_buf(), 0, 0, false, { "se * from TestTable" })
-
-		test_utils.defer_async(3000)
-		assert(#vim.lsp.get_clients({ bufnr = 0 }) == 1, "No lsp clients attached")
+		local buf = vim.api.nvim_get_current_buf()
+		---@type vim.lsp.Client
+		local client = test_utils.wait_for_lsp_attach()
+		local statement = "se * from TestTable"
+		assert(client, "No lsp clients attached.")
 
 		-- move to the first E in SELECT
-		vim.api.nvim_win_set_cursor(0, { 1, 1 })
-		local items = test_utils.get_completion_items()
-		assert(#items > 0, "Neovim didn't provide any completion items")
-		assert(utils.contains(items, "SELECT"))
+		test_utils.wait_for_completion_item(buf, "SELECT", { text = statement, cursor = {1, 1}})
+
+		test_utils.safe_buf_delete(buf, {force = true})
 	end,
 }

@@ -362,9 +362,14 @@ local function delete_unused_cache(in_use_connections)
 	end
 end
 
+local get_cache = function()
+	return global_cache
+end
+
 return {
 	initialise_cache_async = initialise_cache_async,
 	delete_unused_cache = delete_unused_cache,
 	is_refreshing = is_refreshing,
 	find_async = find_async,
+	get_cache = get_cache
 }

@@ -1,11 +1,27 @@
+local utils = require("mssql.utils")
+local finder = require("mssql.find_object")
+
+---@alias MssqlQueryManagerState "connected"|"disconnected"|"executing a query"|"cancelling a query"|"connecting"
+
 ---@class MssqlExecutionInfo
 ---@field rows_affected? number
 ---@field elapsed_time? number
 
-local utils = require("mssql.utils")
-local finder = require("mssql.find_object")
+---@class MssqlQueryManager
+---@field bufnr integer
+---@field client vim.lsp.Client
+---@field state MssqlQueryManagerState
+---@field states table<string, MssqlQueryManagerState>
+---@field last_connect_params table
+---@field owner_uri string
+---@field execution_timer uv.uv_timer_t?
+---@field last_execution_info MssqlExecutionInfo
+---@field start_time number
+---@field query_timeout number?
+local QueryManager = {}
+QueryManager.__index = QueryManager
 
-local states = {
+QueryManager.states = {
 	Disconnected = "disconnected",
 	Cancelling = "cancelling a query",
 	Connecting = "connecting",
@@ -13,323 +29,327 @@ local states = {
 	Executing = "executing a query",
 }
 
-local function new_state()
-	local state = states.Disconnected
+--- Constructor
+---@param bufnr integer
+---@param client vim.lsp.Client
+---@param opts MssqlConfig
+---@return MssqlQueryManager
+function QueryManager.new(bufnr, client, opts)
+	local self = setmetatable({}, QueryManager)
 
-	return {
-		get_state = function()
-			return state
-		end,
-		set_state = function(s)
-			state = s
-			vim.cmd("redrawstatus")
-		end,
-	}
+	self.bufnr = bufnr
+	self.client = client
+	self.state = QueryManager.states.Disconnected
+	self.last_connect_params = {}
+	self.owner_uri = utils.lsp_file_uri(bufnr) or ""
+	self.execution_timer = nil
+	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
+	self.start_time = 0
+	self.query_timeout = opts.query_timeout
+
+	vim.api.nvim_buf_attach(bufnr, false, {
+		on_detach = function()
+			self:cleanup_timer()
+		end
+	})
+
+	return self
 end
 
-return {
-	states = states,
-	-- creates a query manager, which
-	-- interacts with sql server while maintaining a state
-	create_query_manager = function(bufnr, client, opts)
-		local state = new_state()
-		local last_connect_params = {}
-		local owner_uri = utils.lsp_file_uri(bufnr)
-		local execution_timer = nil
-		---@type MssqlExecutionInfo
-		local last_execution_info = { rows_affected = nil, elapsed_time = nil }
-		local start_time = 0
-		local timeout = opts.query_timeout
+--- Validates the current state before performing an action.
+---@param self MssqlQueryManager
+---@param expected_state MssqlQueryManagerState
+---@param action string Name of the action being attempted.
+local function validate_state(self, expected_state, action)
+	if self.state ~= expected_state then
+		error(("Cannot %s: currently %s"):format(action, self.state), 0)
+	end
+end
 
-		--- Stops the timer and calculates the final, precise time from the start time.
-		---@return nil
-		local function stop_execution_timer()
-			if execution_timer then
-				if start_time > 0 then
-					last_execution_info.elapsed_time = (vim.loop.now() - start_time) / 1000
-				end
+--- Converts passed timeout in seconds to milliseconds.
+---@param timeout_seconds? integer Timeout in seconds.
+---@return integer? Timeout in milliseconds.
+local function calculate_timeout_ms(timeout_seconds)
+	return timeout_seconds and timeout_seconds > 0 and (timeout_seconds * 1000) or nil
+end
 
-				execution_timer:stop()
-				execution_timer:close()
-				execution_timer = nil
-				start_time = 0
+--- Sets the internal state and redraws the statusline.
+---@param new_state MssqlQueryManagerState
+function QueryManager:set_state(new_state)
+	self.state = new_state
+	vim.cmd("redrawstatus")
+end
+
+---@return MssqlQueryManagerState
+function QueryManager:get_state()
+	return self.state
+end
+
+--- Stops and cleans up the execution timer.
+function QueryManager:cleanup_timer()
+	if self.execution_timer and not self.execution_timer:is_closing() then
+		self.execution_timer:stop()
+		self.execution_timer:close()
+		self.execution_timer = nil
+	end
+end
+
+--- Stops timer and calculates final time.
+function QueryManager:stop_execution_timer()
+	if self.execution_timer then
+		if self.start_time > 0 then
+			self.last_execution_info.elapsed_time = (vim.loop.now() - self.start_time) / 1000
+		end
+		self:cleanup_timer()
+		self.start_time = 0
+		vim.cmd("redrawstatus")
+	end
+end
+
+--- Starts the timer loop for execution tracking.
+function QueryManager:start_execution_timer()
+	self:stop_execution_timer()
+	self.last_execution_info.elapsed_time = 0
+	self.last_execution_info.rows_affected = nil
+	self.start_time = vim.loop.now()
+
+	self.execution_timer = vim.loop.new_timer()
+	if self.execution_timer then
+		self.execution_timer:start(0, 1000, vim.schedule_wrap(function()
+			if self.state == QueryManager.states.Executing then
+				self.last_execution_info.elapsed_time = (vim.loop.now() - self.start_time) / 1000
 				vim.cmd("redrawstatus")
+			else
+				self:stop_execution_timer()
 			end
-		end
+		end))
+	end
+end
 
-		--- Starts a timer that updates the elapsed time every second.
-		---@return nil
-		local function start_execution_timer()
-			last_execution_info.elapsed_time = 0
-			last_execution_info.rows_affected = nil
-			start_time = vim.loop.now()
+--- Initiates an async connection request.
+---@param connect_params table
+function QueryManager:connect_async(connect_params)
+	validate_state(self, QueryManager.states.Disconnected, "connect")
 
-			execution_timer = vim.loop.new_timer()
-			if execution_timer then
-				execution_timer:start(0, 1000, vim.schedule_wrap(function()
-					if state.get_state() == states.Executing then
-						last_execution_info.elapsed_time = (vim.loop.now() - start_time) / 1000
-						vim.cmd("redrawstatus")
-					else
-						stop_execution_timer()
-					end
-				end))
-			end
-		end
+	connect_params.ownerUri = self.owner_uri
+	self:set_state(QueryManager.states.Connecting)
 
-		--- Parses a query/message string to find the number of rows affected.
-		--- NOTE: Relies on the specific "(N rows affected)" format from the LSP.
-		---@param message string
-		---@return nil
-		local function parse_rows_affected_message(message)
-			local row_count = string.match(message, "%((%d+) rows? affected%)")
-			if row_count then
-				last_execution_info.rows_affected = tonumber(row_count)
-			end
-		end
+	local _, err = utils.lsp_request_async(self.client, "connection/connect", connect_params)
+	if err then
+		self:set_state(QueryManager.states.Disconnected)
+		error("Could not connect: " .. err.message, 0)
+	end
 
-		--- Sets the final query elapsed time and row count from server results.
-		--- Prioritizes DML row counts if they exist, otherwise uses the SELECT row count.
-		---@param final_time number? The precise final execution time in seconds.
-		---@param select_row_count number The row count returned by the SELECT statement.
-		---@return nil
-		local function set_final_execution_stats(final_time, select_row_count)
-			last_execution_info.elapsed_time = final_time
-			if last_execution_info.rows_affected == nil then
-				last_execution_info.rows_affected = select_row_count
-			end
-		end
+	local result
+	result, err = utils.wait_for_notification_async(self.bufnr, self.client, "connection/complete", 10000)
 
-		--- Handles the 'query/message' notification to parse for `(N rows affected)` in UPDATE,INSERT,DELETE statements
-		---@param message_result table
-		---@return nil
-		local function handle_query_message(message_result)
-			local ok, err = pcall(function()
-					parse_rows_affected_message(message_result.message.message)
-			end)
-			if not ok then
-				utils.log_warn("Failed to parse rows affected: " .. err)
-			end
-		end
+	if err or (result and result.errorMessage and result.errorMessage ~= vim.NIL) then
+		self:set_state(QueryManager.states.Disconnected)
+		error("Error in connecting: " .. (err and err.message or result.errorMessage), 0)
+	end
 
-		--- Handles the 'query/complete' notification to parse for elapsed time and for SELECT statements rowCount
-		---@param complete_result table
-		---@return nil
-		local function handle_query_complete(complete_result)
-			local batch_summary = complete_result.batchSummaries and complete_result.batchSummaries[#complete_result.batchSummaries]
-			if not batch_summary then
-			  return
-			end
+	if result and result.connectionSummary then
+		connect_params.connection.options.database = result.connectionSummary.databaseName
+		connect_params.connection.options.DatabaseDisplayName = result.connectionSummary.databaseName
+	end
 
-			local elapsed_str = batch_summary.executionElapsed
-			local hours, minutes, seconds = elapsed_str:match("(%d+):(%d+):([%d.]+)")
-			local final_elapsed_time = (tonumber(hours) or 0) * 3600
-			  + (tonumber(minutes) or 0) * 60
-			  + (tonumber(seconds) or 0)
+	self:set_state(QueryManager.states.Connected)
+	self.last_connect_params = connect_params
+end
 
-			-- Get total row count for SELECT statements only
-			local total_row_count = 0
-			if batch_summary.resultSetSummaries and #batch_summary.resultSetSummaries > 0 then
-			  total_row_count = batch_summary.resultSetSummaries[#batch_summary.resultSetSummaries].rowCount
-			end
+--- Disconnects the current session.
+function QueryManager:disconnect_async()
+	validate_state(self, QueryManager.states.Connected, "disconnect")
+	utils.lsp_request_async(self.client, "connection/disconnect", { ownerUri = self.owner_uri })
+	self:set_state(QueryManager.states.Disconnected)
+	self.last_connect_params = {}
+	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
+end
 
-			set_final_execution_stats(final_elapsed_time, total_row_count)
-		end
+--- Executes an SQL query string.
+---@param query string
+---@return table? result The query result object.
+function QueryManager:execute_async(query)
+	validate_state(self, QueryManager.states.Connected, "execute")
+	self:set_state(QueryManager.states.Executing)
+	self:start_execution_timer()
 
+	local result, err = utils.lsp_request_async(self.client, "query/executeString", {
+		query = query,
+		ownerUri = self.owner_uri
+	})
 
-		local qm = {
-			-- the owner uri gets added to the connect_params
-			connect_async = function(connect_params)
-				if state.get_state() ~= states.Disconnected then
-					error("You are currently " .. state.get_state(), 0)
-				end
+	if err or not result then
+		self:stop_execution_timer()
+		self:set_state(QueryManager.states.Connected)
+		error(err and ("Error executing query: " .. err.message) or "Could not execute query", 0)
+	end
 
-				connect_params.ownerUri = owner_uri
-				state.set_state(states.Connecting)
+	return self:wait_for_query_completion()
+end
 
-				local result, err
-				_, err = utils.lsp_request_async(client, "connection/connect", connect_params)
-				if err then
-					state.set_state(states.Disconnected)
-					error("Could not connect: " .. err.message, 0)
-				end
+--- Internal helper to wait for completion notification.
+---@return table? result
+function QueryManager:wait_for_query_completion()
+	local timeout_ms = calculate_timeout_ms(self.query_timeout)
+	local result, err = utils.wait_for_notification_async(
+		self.bufnr, self.client, "query/complete", timeout_ms
+	)
 
-				result, err = utils.wait_for_notification_async(bufnr, client, "connection/complete", 10000)
-				if err then
-					state.set_state(states.Disconnected)
-					error("Error in connecting: " .. err.message, 0)
-				elseif result and result.errorMessage then
-					state.set_state(states.Disconnected)
-					error("Error in connecting: " .. result.errorMessage, 0)
-				end
+	self:stop_execution_timer()
+	vim.cmd("redrawstatus")
+	if self.state == QueryManager.states.Cancelling then
+		self:set_state(QueryManager.states.Connected)
+		utils.log_info("Query was cancelled.")
+		return
+	end
 
-				if result and result.connectionSummary then
-					connect_params.connection.options.database = result.connectionSummary.databaseName
-					connect_params.connection.options.DatabaseDisplayName = result.connectionSummary.databaseName
-				end
-				state.set_state(states.Connected)
-				last_connect_params = connect_params
-			end,
+	if err and err.code == -32001 then
+		return self:handle_timeout()
+	end
 
-			disconnect_async = function()
-				if state.get_state() ~= states.Connected then
-					error("You are currently " .. state.get_state(), 0)
-				end
-				utils.lsp_request_async(client, "connection/disconnect", { ownerUri = owner_uri })
-				state.set_state(states.Disconnected)
-				last_connect_params = {}
-				last_execution_info = { rows_affected = nil, elapsed_time = nil }
-			end,
+	self:set_state(QueryManager.states.Connected)
+	return result
+end
 
-			execute_async = function(query)
-				if state.get_state() ~= states.Connected then
-					error("You are currently " .. state.get_state(), 0)
-				end
-				state.set_state(states.Executing)
+--- Handles execution timeout by attempting to cancel.
+---@param timeout_ms? integer
+function QueryManager:handle_timeout(timeout_ms)
+	timeout_ms = timeout_ms or 10000
+	utils.log_error("Query execution timed out...")
+	self:cancel_async()
 
-				start_execution_timer()
+	local _, err = utils.wait_for_notification_async(
+		self.bufnr, self.client, "query/complete", timeout_ms
+	)
 
-				local result, err =
-					utils.lsp_request_async(client, "query/executeString", { query = query, ownerUri = owner_uri })
+	if err then
+		utils.log_error("Did not receive cancel confirmation within timeout: " .. timeout_ms / 1000 .. "s")
+	else
+		utils.log_info("Cancellation confirmed.")
+	end
 
-				if err then
-                    stop_execution_timer()
-					state.set_state(states.Connected)
-					error("Error executing query: " .. err.message, 0)
-				elseif not result then
-					state.set_state(states.Connected)
-					error("Could not execute query", 0)
-				else
-					utils.log_info("Executing...")
-				end
+	self:set_state(QueryManager.states.Connected)
+	error("Query execution connection timed out.", 0)
+end
 
-				result, err = utils.wait_for_notification_async(bufnr, client, "query/complete", timeout)
-				stop_execution_timer()
-				state.set_state(states.Connected)
-				vim.cmd("redrawstatus")
+--- Cancels the currently running query.
+function QueryManager:cancel_async()
+	validate_state(self, QueryManager.states.Executing, "cancel")
+	self:set_state(QueryManager.states.Cancelling)
+	utils.lsp_request_async(self.client, "query/cancel", { ownerUri = self.owner_uri })
+end
 
-				-- handle cancellations that may be requested while waiting
-				if state.get_state() == states.Cancelling then
-					stop_execution_timer()
-					state.set_state(states.Connected) -- set state back to connected AFTER cancelling
-					utils.log_info("Query was cancelled.")
-					return
-				end
+--- Parses a query/message string to find the number of rows affected.
+--- NOTE: Relies on the specific "(N rows affected)" format from the LSP.
+---@param message string
+function QueryManager:parse_rows_affected_message(message)
+	local row_count = string.match(message, "%((%d+) rows? affected%)")
+	if row_count then
+		self.last_execution_info.rows_affected = tonumber(row_count)
+	end
+end
 
-				-- on timeout, 'err' is set. We DO NOT set the state to Connected
-				-- we simply error, the state remains "Executing"
-				-- this allows the user to call cancel_async() successfully
-				if err then
-					stop_execution_timer()
-					error("Could not execute query: " .. vim.inspect(err), 0)
-				elseif not (result or result.batchSummaries) then
-					utils.log_error("Query execution timed out. Sending cancellation request...")
-					state.set_state(states.Cancelling)
-					utils.lsp_request_async(client, "query/cancel", { ownerUri = owner_uri })
-					-- wait for the server to confirm the cancel
-					-- we give this a separate, short timeout (e.g., 10 seconds)
-					local cancel_timeout_minutes = 10 / 60
-					local _, cancel_err = utils.wait_for_notification_async(bufnr, client, "query/complete", cancel_timeout_minutes)
+--- Sets the final query elapsed time and row count from server results.
+--- Prioritizes DML row counts if they exist, otherwise uses the SELECT row count.
+---@param final_time number? The precise final execution time in seconds.
+---@param select_row_count number The row count returned by the SELECT statement.
+function QueryManager:set_final_execution_stats(final_time, select_row_count)
+	self.last_execution_info.elapsed_time = final_time
+	if self.last_execution_info.rows_affected == nil then
+		self.last_execution_info.rows_affected = select_row_count
+	end
+end
 
-					if cancel_err then
-						utils.log_error("Did not receive cancel confirmation. Forcing state reset.")
-					else
-						utils.log_info("Cancellation confirmed.")
-					end
+---@return table params
+function QueryManager:get_connect_params()
+	return vim.tbl_deep_extend("keep", self.last_connect_params, {})
+end
 
-					-- no matter what, reset the state and report *original* error
-					state.set_state(states.Connected)
-					error("Could not execute query: " .. vim.inspect(err), 0) -- rethrow the original timeout error
-				end
+---@return vim.lsp.Client
+function QueryManager:get_lsp_client()
+	return self.client
+end
 
-				-- no error and no cancellation, so the query completed successfully
-				state.set_state(states.Connected)
+---@return MssqlExecutionInfo
+function QueryManager:last_execution()
+	return self.last_execution_info
+end
 
-				if not (result or result.batchSummaries) then
-					error("Could not execute query: no results returned", 0)
-				end
+--- Updates connection parameters based on notification result.
+---@param result table
+---@return boolean success True if parameters were updated.
+function QueryManager:update_connection_params(result)
+	if not (result and result.ownerUri == self.owner_uri and result.connection) then
+		return false
+	end
 
-				return result
-			end,
+	self.last_connect_params = vim.tbl_deep_extend("force", self.last_connect_params, {
+		connection = {
+			options = {
+				user = result.connection.userName,
+				database = result.connection.databaseName,
+				server = result.connection.serverName,
+			},
+		},
+	})
+	return true
+end
 
-			connectionchanged_async = function(result)
-				if not (result and result.ownerUri == owner_uri and result.connection) then
-					return
-				end
+--- Handler for connectionchanged notification.
+---@param result table
+function QueryManager:connectionchanged_async(result)
+	if self:update_connection_params(result) then
+		self:initialise_cache_async()
+	end
+end
 
-				last_connect_params = vim.tbl_deep_extend("force", last_connect_params, {
-					connection = {
-						options = {
-							user = result.connection.userName,
-							database = result.connection.databaseName,
-							server = result.connection.serverName,
-						},
-					},
-				})
-				finder.initialise_cache_async(client, last_connect_params.connection.options)
-			end,
+-- Passthroughs to Finder (passing client/params explicility)
 
-			cancel_async = function()
-				if state.get_state() ~= states.Executing then
-					if state.get_state() == states.Cancelling then
-						error("Already cancelling query, please wait...", 0)
-					else
-						error("There is no query being executed in the current buffer", 0)
-					end
-					return
-				end
+function QueryManager:initialise_cache_async(force)
+	return finder.initialise_cache_async(self.client, self.last_connect_params.connection.options, force)
+end
 
-				state.set_state(states.Cancelling)
-				-- let the waiting `execute_async` coroutine handle the 'query/complete' notification
-				utils.lsp_request_async(client, "query/cancel", { ownerUri = owner_uri })
-			end,
+function QueryManager:find_async()
+	return finder.find_async(self.last_connect_params.connection.options, self.client)
+end
 
-			get_state = function()
-				return state.get_state()
-			end,
+function QueryManager:is_refreshing()
+	return finder.is_refreshing(self.last_connect_params.connection.options)
+end
 
-			get_connect_params = function()
-				return vim.tbl_deep_extend("keep", last_connect_params, {})
-			end,
+--- Handlers (called by LSP callbacks)
 
-			get_lsp_client = function()
-				return client
-			end,
+---@param result table
+function QueryManager:handle_query_complete(result)
+	local batch_summary = result.batchSummaries and result.batchSummaries[#result.batchSummaries]
+	if not batch_summary then
+	  return
+	end
 
-			initialise_cache_async = function(force)
-				return finder.initialise_cache_async(client, last_connect_params.connection.options, force)
-			end,
-			find_async = function()
-				return finder.find_async(last_connect_params.connection.options, client)
-			end,
-			is_refreshing = function()
-				return finder.is_refreshing(last_connect_params.connection.options)
-			end,
+	local elapsed_str = batch_summary.executionElapsed
+	local hours, minutes, seconds = elapsed_str:match("(%d+):(%d+):([%d.]+)")
+	local final_elapsed_time = (tonumber(hours) or 0) * 3600
+	  + (tonumber(minutes) or 0) * 60
+	  + (tonumber(seconds) or 0)
 
-			--- Returns the last execution's info.
-			---@return MssqlExecutionInfo
-			last_execution = function()
-				return last_execution_info
-			end,
+	-- Get total row count for SELECT statements only
+	local total_row_count = 0
+	if batch_summary.resultSetSummaries and #batch_summary.resultSetSummaries > 0 then
+	  total_row_count = batch_summary.resultSetSummaries[#batch_summary.resultSetSummaries].rowCount
+	end
 
-			parse_rows_affected_message = parse_rows_affected_message,
+	self:set_final_execution_stats(final_elapsed_time, total_row_count)
+end
 
-			set_final_execution_stats = set_final_execution_stats,
-			handle_query_complete = handle_query_complete,
-			handle_query_message = handle_query_message,
-		}
+---@param result table
+function QueryManager:handle_query_message(result)
+	local ok, err = pcall(function()
+		self:parse_rows_affected_message(result.message.message)
+	end)
+	if not ok then
+		utils.log_warn("Failed to parse rows affected: " .. err)
+	end
+end
 
-		-- Add buffer cleanup to handle cases where buffer is deleted during execution
-		vim.api.nvim_buf_attach(bufnr, false, {
-			on_detach = function()
-				if execution_timer and not execution_timer:is_closing() then
-					execution_timer:stop()
-					execution_timer:close()
-					execution_timer = nil
-				end
-			end
-		})
-
-		return qm
-	end,
-}
+return QueryManager

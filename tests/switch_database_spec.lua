@@ -1,52 +1,34 @@
 local mssql = require("mssql")
 local test_utils = require("tests.utils")
-local utils = require("mssql.utils")
-
-local switch_db_async = function()
-	local co = coroutine.running()
-	local success = false
-	mssql.switch_database(function()
-		success = true
-		if coroutine.status(co) == "suspended" then
-			coroutine.resume(co)
-		end
-	end)
-	vim.defer_fn(function()
-		if coroutine.status(co) == "suspended" then
-			coroutine.resume(co)
-		end
-	end, 60000)
-	coroutine.yield()
-	if not success then
-		error("mssql.switch_database did not resume the callback within 1 minute", 0)
-	end
-end
-
-local result, err
-
-local wait_for_intellisenseReady = function()
-	local client = vim.lsp.get_clients({ name = "mssql_ls", bufnr = 0 })[1]
-	local buf = vim.api.nvim_get_current_buf()
-
-	-- The connect event is sent, then the intelliSenseReady event.
-	-- Wait for the intelliSenseReady event as this means the connection was successful
-	result, err = utils.wait_for_notification_async(buf, client, "textDocument/intelliSenseReady", 30000)
-end
 
 return {
 	test_name = "Switch database should work",
 	run_test_async = function()
+		local _, _, qm, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
+
 		test_utils.ui_select_fake("TestDbB")
+		mssql.switch_database()
 
-		test_utils.wait_for_all_async({ switch_db_async, wait_for_intellisenseReady })
+		local current_db = ""
+		local state= ""
+		local attempts = 0
 
-		if err then
-			error(err.message)
+		while attempts < 50 do
+			test_utils.defer_async(100)
+			local params = qm:get_connect_params()
+			if params and params.connection and params.connection.options then
+				current_db = params.connection.options.database
+			end
+			state = qm:get_state()
+			if current_db == "TestDbB" and state == qm.states.Connected then
+				break
+			end
+			attempts = attempts + 1
 		end
 
-		assert(result, "No result returned from textDocument/intelliSenseReady")
-		if result.errorMessage then
-			error("Error returned from textDocument/intelliSenseReady: " .. result.errorMessage)
-		end
+		assert(current_db == "TestDbB", "Database did not switch to TestDbB. Current: " .. tostring(current_db))
+		assert(state == qm.states.Connected, "Query Manager did not return to Connected state.")
+
+		cleanup()
 	end,
 }

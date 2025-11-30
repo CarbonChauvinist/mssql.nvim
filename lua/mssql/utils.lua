@@ -61,18 +61,6 @@ local function safe_assert(item, message)
 	return item
 end
 
-local function contains(tbl, element)
-	if not table then
-		return false
-	end
-	for _, v in pairs(tbl) do
-		if v == element then
-			return true
-		end
-	end
-	return false
-end
-
 local try_resume =
 	-- resumes the coroutiune, vim notifies any errors
 	function(co, ...)
@@ -184,7 +172,6 @@ local function format_elapsed_time_to_string(raw_time, with_ms)
 end
 
 return {
-	contains = contains,
 	wait_for_schedule_async = wait_for_schedule_async,
 	defer_async = function(ms)
 		local co = coroutine.running()
@@ -194,15 +181,16 @@ return {
 
 		coroutine.yield()
 	end,
+
 	---Waits for the lsp to call the given method, with optional timeout.
 	---Must be run inside a coroutine.
-	---@param client vim.lsp.Client
 	---@param bufnr integer
+	---@param client vim.lsp.Client
 	---@param method string
-	---@param timeout integer
+	---@param timeout_in_ms? integer
 	---@return any result
 	---@return lsp.ResponseError? error
-	wait_for_notification_async = function(bufnr, client, method, timeout)
+	wait_for_notification_async = function(bufnr, client, method, timeout_in_ms)
 		local owner_uri = lsp_file_uri(bufnr)
 		local this = coroutine.running()
 		local resumed = false
@@ -218,7 +206,7 @@ return {
 		register_lsp_handler(client, method, handler)
 
 		-- Only schedule timeout if valid, positive timeout is provided
-		if timeout and timeout > 0 then
+		if timeout_in_ms and timeout_in_ms > 0 then
 			vim.defer_fn(function()
 				if not resumed then
 					resumed = true
@@ -232,7 +220,7 @@ return {
 						)
 					)
 				end
-			end, timeout * 60000)
+			end, timeout_in_ms)
 		end
 
 		return coroutine.yield()

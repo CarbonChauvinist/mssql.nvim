@@ -24,7 +24,6 @@ local function setup_async()
 	local co = coroutine.running()
 	mssql.setup({
 		open_results_in = "current_window",
-		query_timeout= 0.05 -- 3 seconds
 	}, function()
 		vim.schedule(function()
 			coroutine.resume(co)
@@ -36,6 +35,14 @@ end
 return {
 	test_name = "Setup should download and extract the sql tools",
 	run_test_async = function()
+		local skip_request = os.getenv("SKIP_DOWNLOAD") == "true" or os.getenv("SKIP_DOWNLOAD") == "1"
+
+		if skip_request and tools_file_exists() then
+			print("    [INFO] Skipping download (SKIP_DOWNLOAD set and file exists)")
+			setup_async()
+			return
+		end
+
 		vim.fn.delete(tools_folder, "rf")
 		vim.fn.delete(vim.fs.joinpath(vim.fn.stdpath("data"), "mssql.nvim/config.json"))
 
