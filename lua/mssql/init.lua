@@ -156,6 +156,10 @@ local function enable_lsp()
 			if not (result and result.ownerUri and result.ownerUri == buffer_uri) then return end
 
 			qm:handle_query_message(result)
+
+			if result.message and result.message.message then
+				current_config.view_messages_in(result.message.message, result.message.isError)
+			end
 		end
 
 		utils.register_lsp_handler(client, "query/complete", on_query_complete)
