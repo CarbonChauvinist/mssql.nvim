@@ -9,6 +9,8 @@ local finder = require("mssql.find_object")
 local joinpath = vim.fs.joinpath
 
 local M = {}
+-- Store the latest configuration here so closures always see the current version
+local current_config = {}
 
 -- creates the directory if it doesn't exist
 local function make_directory(path)
@@ -50,7 +52,8 @@ local function clean_cache()
 end
 
 local lsp_name = "mssql_ls"
-local function enable_lsp(opts)
+local function enable_lsp()
+	local opts = current_config
 	local default_path = joinpath(opts.data_dir, "sqltools/MicrosoftSqlToolsServiceLayer")
 	if jit.os == "Windows" then
 		default_path = default_path .. ".exe"
@@ -377,6 +380,8 @@ local function setup_async(opts)
         end
     end
 	opts = vim.tbl_deep_extend("keep", opts or {}, default_opts)
+	-- Update the module-level config variables
+	current_config = opts
 
 	-- validate max_rows since now used for paginagtion
 	if type(opts.max_rows) ~= "number" or opts.max_rows <= 0 then
@@ -410,7 +415,7 @@ local function setup_async(opts)
 		end
 	end
 
-	enable_lsp(opts)
+	enable_lsp()
 	set_auto_commands(opts)
 
 	plugin_opts = opts
