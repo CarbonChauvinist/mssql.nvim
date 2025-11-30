@@ -706,6 +706,26 @@ M.run_with_mocks = function(mocks, func)
 	return captures
 end
 
+--- Generic polling function that waits for a predicate to return true. (Defaults to 10s/250ms timeout/interval).
+---@param predicate fun(): boolean The function to check. Should return true when condition is met.
+---@param opts? { timeout_ms: integer, interval_ms: integer }
+---@return boolean success True if the predicate returned before the timeout.
+M.poll = function(predicate, opts)
+	opts = opts or {}
+	local timeout = opts.timeout_ms or 10000
+	local interval = opts.interval_ms or 250
+	local max_attempts = math.ceil(timeout / interval)
+	local attempts = 0
 
+	while attempts < max_attempts do
+		if predicate() then
+			return true
+		end
+		M.defer_async(interval)
+		attempts = attempts + 1
+	end
+
+	return false
+end
 
 return M
