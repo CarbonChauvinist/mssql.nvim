@@ -960,13 +960,20 @@ M.cancel_query = function(bufnr)
 end
 
 M.lualine_component = {
-	function()
-		local buf = vim.api.nvim_get_current_buf()
-		local qm = query_managers[buf]
-		local qri = vim.b.query_result_info
+	---@param bufnr? integer
+	function(bufnr)
+		if type(bufnr) ~= "number" then
+			bufnr = vim.api.nvim_get_current_buf()
+		end
+		if not vim.api.nvim_buf_is_valid(bufnr) then
+			return ""
+		end
+		local qm = query_managers[bufnr]
+		local has_qri, qri = pcall(vim.api.nvim_buf_get_var, bufnr, "query_result_info")
+		if not has_qri then qri = nil end
 
 		if qri then
-			return display_query_results.get_pagination_status()
+			return display_query_results.get_pagination_status(bufnr)
 		elseif not qm then
 			return
 		end
@@ -1023,10 +1030,17 @@ M.lualine_component = {
 
 		return table.concat(status_parts, "  ")
 	end,
-	cond = function()
-		local buf = vim.api.nvim_get_current_buf()
-		local qm = query_managers[buf]
-		return qm ~= nil or vim.b[buf].query_result_info ~= nil
+	---@param bufnr? integer
+	cond = function(bufnr)
+		if type(bufnr) ~= "number" then
+			bufnr = vim.api.nvim_get_current_buf()
+		end
+		if not vim.api.nvim_buf_is_valid(bufnr) then
+			return false
+		end
+		local qm = query_managers[bufnr]
+		local has_qri, _ = pcall(vim.api.nvim_buf_get_var, bufnr, "query_result_info")
+		return qm ~= nil or has_qri
 	end,
 }
 

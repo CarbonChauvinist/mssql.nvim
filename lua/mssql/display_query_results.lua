@@ -309,10 +309,19 @@ function M.last_page()
 end
 ---
 ---Get pagination status string for display in statusline
+---@param bufnr? integer
 ---@return string
-function M.get_pagination_status()
+function M.get_pagination_status(bufnr)
+	-- need to sanitize, for e.g. heirline passes component table as first argument
+	if type(bufnr) ~= "number" then
+		bufnr = vim.api.nvim_get_current_buf()
+	end
+
+	if not vim.api.nvim_buf_is_valid(bufnr) then
+		return ""
+	end
 	---@type QueryResultInfo?
-	local info = vim.b[vim.api.nvim_get_current_buf()].query_result_info
+	local info = vim.b[bufnr].query_result_info
 	if not info then
 		return ""
 	end

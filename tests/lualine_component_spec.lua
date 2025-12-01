@@ -15,18 +15,16 @@ return {
 
 		local select_status
 		local live_query_stats = test_utils.poll(function()
-			select_status = test_utils.get_lualine_status() or ""
+			select_status = test_utils.get_lualine_status(buf) or ""
 			return select_status:find("Executing") and select_status:find(live_timer_pattern)
 		end, { timeout_ms = 1500, interval = 50 })
 
 		assert(live_query_stats, "Lualine should show 'Executing' and live timer. Got: " .. select_status)
 
 		local res_buf, _, _ = test_utils.res_buf_catcher()
-		vim.api.nvim_win_set_buf(0, buf)
 
-		local final_status = test_utils.get_lualine_status()
-		assert(final_status, "Status should not be nil.")
-		assert(final_status:find("1 row affected"), "Should show '1 row affected'. Got: " .. final_status)
+		test_utils.wait_for_status("1 row affected", { bufnr = buf })
+		local final_status = test_utils.get_lualine_status(buf)
 		assert(final_status:find(final_timer_pattern), "Should show final time with ms. Got: " .. final_status)
 
 		test_utils.cleanup_results_buffer(res_buf)
@@ -41,8 +39,7 @@ return {
 		end, { timeout_ms = 5000 })
 		assert(dml_finished, "Query did not finish (Timed out waiting for Connected state).")
 
-		vim.api.nvim_win_set_buf(0, buf)
-		local update_status = test_utils.get_lualine_status()
+		local update_status = test_utils.get_lualine_status(buf)
 		assert(update_status:find("2 rows affected"), "Should show '2 rows affected'. Got: " .. update_status)
 
 		cleanup()

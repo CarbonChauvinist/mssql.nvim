@@ -298,25 +298,30 @@ M.log_contains_pattern = function(logs, pattern)
 end
 
 --- Gets the current string from the mssql lualine component.
+---@param bufnr? integer Optional buffer to get status for (defaults to current).
 ---@return string? status The status string or nil.
-M.get_lualine_status = function()
+M.get_lualine_status = function(bufnr)
+	if bufnr and not vim.api.nvim_buf_is_valid(bufnr) then
+		return nil
+	end
 	local lualine_component_func = require("mssql").lualine_component[1]
 	if not lualine_component_func then
 		error("Could not find lualine component function.")
 	end
-	return lualine_component_func()
+	return lualine_component_func(bufnr)
 end
 
 --- Polls until the lualine status matches an expected pattern.
 ---@param expected_pattern string The string pattern to wait for.
----@param opts? { timeout_ms: integer } Options table (default timeout 5s)
+---@param opts? { timeout_ms: integer, bufnr: integer } Options table (default timeout 5s)
 M.wait_for_status = function(expected_pattern, opts)
 	opts = opts or {}
 	local timeout_ms = opts.timeout_ms or 5000
+	local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
 	local last_status = ""
 
 	local success = vim.wait(timeout_ms, function()
-		last_status = M.get_lualine_status() or ""
+		last_status = M.get_lualine_status(bufnr) or ""
 		return last_status:find(expected_pattern) ~= nil
 	end, 10)
 

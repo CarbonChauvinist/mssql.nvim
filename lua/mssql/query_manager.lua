@@ -327,11 +327,16 @@ function QueryManager:handle_query_complete(result)
 	  return
 	end
 
+	local final_elapsed_time = 0
 	local elapsed_str = batch_summary.executionElapsed
-	local hours, minutes, seconds = elapsed_str:match("(%d+):(%d+):([%d.]+)")
-	local final_elapsed_time = (tonumber(hours) or 0) * 3600
-	  + (tonumber(minutes) or 0) * 60
-	  + (tonumber(seconds) or 0)
+
+	-- guard against cancelled queries which may not have executionElapsed field populated
+	if elapsed_str then
+		local hours, minutes, seconds = elapsed_str:match("(%d+):(%d+):([%d.]+)")
+		final_elapsed_time = (tonumber(hours) or 0) * 3600
+		  + (tonumber(minutes) or 0) * 60
+		  + (tonumber(seconds) or 0)
+	end
 
 	-- Get total row count for SELECT statements only
 	local total_row_count = 0
