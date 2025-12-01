@@ -969,8 +969,7 @@ M.lualine_component = {
 			return ""
 		end
 		local qm = query_managers[bufnr]
-		local has_qri, qri = pcall(vim.api.nvim_buf_get_var, bufnr, "query_result_info")
-		if not has_qri then qri = nil end
+		local qri = vim.b[bufnr].query_result_info
 
 		if qri then
 			return display_query_results.get_pagination_status(bufnr)
@@ -1039,8 +1038,7 @@ M.lualine_component = {
 			return false
 		end
 		local qm = query_managers[bufnr]
-		local has_qri, _ = pcall(vim.api.nvim_buf_get_var, bufnr, "query_result_info")
-		return qm ~= nil or has_qri
+		return qm ~= nil or vim.b[bufnr].query_result_info ~= nil
 	end,
 }
 
