@@ -11,7 +11,7 @@ return {
 		local buf, client, cleanup = test_utils.create_lsp_buffer_async()
 
 		test_utils.ui_select_fake("TestConnection")
-		mssql.connect()
+		mssql.connect(buf)
 
 		test_utils.wait_for_intellisenseReady(buf, client)
 		local qm = mssql.get_query_manager(buf)

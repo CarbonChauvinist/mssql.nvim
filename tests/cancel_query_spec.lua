@@ -31,7 +31,7 @@ return {
 
     local query = "WAITFOR DELAY '00:00:15' SELECT 1 AS test"
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
-    mssql.execute_query()
+    mssql.execute_query(buf)
 
 	-- sanity check, verify we actually executed query in first place
 	local executing = false
@@ -44,7 +44,7 @@ return {
 	end
 	assert(executing, "Query did not enter Executing state")
 
-	mssql.cancel_query()
+	mssql.cancel_query(buf)
 
 	local state = poll_for_qm_state(qm, qmm.states.Connected, { timeout_ms = 20000 })
 

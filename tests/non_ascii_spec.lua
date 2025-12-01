@@ -8,7 +8,7 @@ return {
 
 		local query = "select * from dbo.PersonNonAscii"
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
-		mssql.execute_query()
+		mssql.execute_query(buf)
 
 		local res_buf, _, results_str = test_utils.res_buf_catcher()
 		local lines = vim.split(results_str, "\n")

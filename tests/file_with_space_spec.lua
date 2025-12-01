@@ -9,7 +9,7 @@ return {
 		local buf, cleanup = test_utils.create_sql_buffer({ buffer_name = "tests/filename with spaces.sql" })
 		local client = test_utils.wait_for_lsp_attach(buf)
 		test_utils.ui_select_fake("TestConnection")
-		mssql.connect()
+		mssql.connect(buf)
 		test_utils.wait_for_intellisenseReady(buf, client)
 		cleanup()
 	end,

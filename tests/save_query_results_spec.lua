@@ -6,7 +6,7 @@ return {
 	run_test_async = function()
 		vim.cmd("enew")
 		local buf = vim.api.nvim_get_current_buf()
-		vim.b[buf].query_result_info = { ownerUri = "file:///dummy.sql" }
+		vim.b[buf].query_result_info = { ownerUri = "file:///mock_results_buffer.md" }
 
 		--- Helper to run one scenario
 		---@param filename string Filename
@@ -15,7 +15,7 @@ return {
 			local captures = test_utils.run_with_mocks(
 				{ input_value = filename },
 					function()
-					mssql.save_query_results()
+					mssql.save_query_results(buf)
 					test_utils.defer_async(50)
 				end
 			)
@@ -26,13 +26,13 @@ return {
 			assert(#c.requests == 1, "Should make LSP request")
 			assert(c.requests[1].method == "query/saveCsv", "Wrong method")
 			assert(c.requests[1].params.FilePath == "test.csv", "Wrong path")
-			assert(vim.tbl_contains(c.cmds, "edit test.csv"), "Should edit file")
+			assert(vim.list_contains(c.cmds, "edit test.csv"), "Should edit file")
 		end)
 
 		check_save("test.xlsx", function(c)
 			assert(#c.requests == 1, "Should make LSP request")
 			assert(c.requests[1].method == "query/saveExcel", "Wrong method")
-			assert(not vim.tbl_contains(c.cmds, "edit test.xlsx"), "Should NOT edit xlsx")
+			assert(not vim.list_contains(c.cmds, "edit test.xlsx"), "Should NOT edit xlsx")
 		end)
 
 		-- invalid extension
