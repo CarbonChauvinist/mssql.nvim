@@ -29,7 +29,7 @@ return {
   run_test_async = function()
 	local buf, _, qm, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
 
-    local query = "WAITFOR DELAY '00:00:15' SELECT 1 AS test"
+    local query = "WAITFOR DELAY '00:00:03' SELECT 1 AS test"
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
     mssql.execute_query(buf)
 
