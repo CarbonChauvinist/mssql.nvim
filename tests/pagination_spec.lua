@@ -18,17 +18,14 @@ return {
 		---@param expected_car string Car expected to be in single results row
 		---@param expected_status string Text expected to be found in status line
 		local function assert_page(res_buf, expected_car, expected_status)
-			if vim.api.nvim_get_current_buf() ~= res_buf then
-				vim.api.nvim_set_current_buf(res_buf)
-			end
 
-			test_utils.wait_for_status(expected_status, { timeout_ms = 3000 })
+			test_utils.wait_for_status(expected_status, { timeout_ms = 3000, bufnr = res_buf })
 
 			local content = ""
 
 			local found_content = test_utils.poll(function()
-				local _, status, text = test_utils.res_buf_catcher({ res_buf = res_buf })
-				if status and text then
+				local _, res_buf_exists, text = test_utils.res_buf_catcher({ res_buf = res_buf })
+				if res_buf_exists and text then
 					content = text
 					if content:find(expected_car) then
 						return true
@@ -55,10 +52,11 @@ return {
 
 		-- Initial Page (Page 1)
 		local res_buf = test_utils.res_buf_catcher()
-		vim.api.nvim_win_set_buf(0, res_buf)
 		assert_page(res_buf, "Merc", "Rows 1%-1 of 3")
 
 		-- Next Page (Page 2)
+		-- have to set window to results buffer since we'll be using nvim_feedkeys to test pagination
+		vim.api.nvim_win_set_buf(0, res_buf)
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-n>", true, true, true), "x", false)
 		assert_page(res_buf, "Ford", "Rows 2%-2 of 3")
 
@@ -75,7 +73,6 @@ return {
 		assert_page(res_buf, "Merc", "Rows 1%-1 of 3")
 
 		test_utils.cleanup_results_buffer(res_buf)
-		vim.api.nvim_set_current_buf(buf)
 		test_utils.setup_mssql_async({ max_rows = 100 })
 		cleanup()
 	end,

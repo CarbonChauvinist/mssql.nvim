@@ -1,28 +1,5 @@
 local mssql = require("mssql")
 local test_utils = require("tests.utils")
-local qmm = require("mssql.query_manager")
-
---- Polls for desired query manager state.
----@param qm MssqlQueryManager The query manager instance
----@param target_state MssqlQueryManagerState The expected state string
----@param opts? { timeout_ms: integer }
----@return MssqlQueryManagerState state The final state
-local poll_for_qm_state = function(qm, target_state, opts)
-	opts = opts or {}
-	local timeout_ms = opts.timeout_ms or 20000
-
-	local state = qm:get_state()
-	local attempts = 0
-	local max_attempts = math.ceil(timeout_ms / 250)
-
-	while state ~= target_state and attempts < max_attempts do
-		test_utils.defer_async(250)
-		state = qm:get_state()
-		attempts = attempts + 1
-	end
-
-	return state
-end
 
 return {
   test_name = "Cancelling a query returns the query manager to a Connected state.",
@@ -34,24 +11,23 @@ return {
     mssql.execute_query(buf)
 
 	-- sanity check, verify we actually executed query in first place
-	local executing = false
-	for _ = 1, 20 do
-		if qm:get_state() == qmm.states.Executing then
-			executing = true
-			break
-		end
-		test_utils.defer_async(50)
-	end
+	local executing = test_utils.poll(function()
+			return qm:get_state() == qm.states.Executing
+		end, { timeout_ms = 1000, interval = 50 })
 	assert(executing, "Query did not enter Executing state")
 
 	mssql.cancel_query(buf)
 
-	local state = poll_for_qm_state(qm, qmm.states.Connected, { timeout_ms = 20000 })
+	local polled_state
+	local is_connected_after_cancel = test_utils.poll(function()
+			polled_state = qm:get_state()
+			return polled_state == qm.states.Connected
+		end)
 
     -- ensure we're still connected after cancellation
     assert(
-		state == qmm.states.Connected,
-		"Query manager should be 'Connected' after cancellation, but was '" .. state .. "'"
+		is_connected_after_cancel,
+		"Query manager should be 'Connected' after cancellation, but was '" .. polled_state .. "'"
 		)
 
 	cleanup()
