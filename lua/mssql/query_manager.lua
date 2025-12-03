@@ -41,7 +41,6 @@ function QueryManager.new(bufnr, client, opts)
 	self.client = client
 	self.state = QueryManager.states.Disconnected
 	self.last_connect_params = {}
-	self.owner_uri = utils.lsp_file_uri(bufnr) or ""
 	self.execution_timer = nil
 	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
 	self.start_time = 0
@@ -71,6 +70,12 @@ end
 ---@return integer? Timeout in milliseconds.
 local function calculate_timeout_ms(timeout_seconds)
 	return timeout_seconds and timeout_seconds > 0 and (timeout_seconds * 1000) or nil
+end
+
+--- Dynamically calculate the URI every time, handling renames automatically.
+---@return string
+function QueryManager:get_owner_uri()
+	return utils.lsp_file_uri(self.bufnr) or ""
 end
 
 --- Sets the internal state and redraws the statusline.
@@ -131,7 +136,7 @@ end
 function QueryManager:connect_async(connect_params)
 	validate_state(self, QueryManager.states.Disconnected, "connect")
 
-	connect_params.ownerUri = self.owner_uri
+	connect_params.ownerUri = self:get_owner_uri()
 	self:set_state(QueryManager.states.Connecting)
 
 	local _, err = utils.lsp_request_async(self.client, "connection/connect", connect_params)
@@ -160,7 +165,7 @@ end
 --- Disconnects the current session.
 function QueryManager:disconnect_async()
 	validate_state(self, QueryManager.states.Connected, "disconnect")
-	utils.lsp_request_async(self.client, "connection/disconnect", { ownerUri = self.owner_uri })
+	utils.lsp_request_async(self.client, "connection/disconnect", { ownerUri = self:get_owner_uri() })
 	self:set_state(QueryManager.states.Disconnected)
 	self.last_connect_params = {}
 	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
@@ -176,7 +181,7 @@ function QueryManager:execute_async(query)
 
 	local result, err = utils.lsp_request_async(self.client, "query/executeString", {
 		query = query,
-		ownerUri = self.owner_uri
+		ownerUri = self:get_owner_uri()
 	})
 
 	if err or not result then
@@ -237,7 +242,7 @@ end
 function QueryManager:cancel_async()
 	validate_state(self, QueryManager.states.Executing, "cancel")
 	self:set_state(QueryManager.states.Cancelling)
-	utils.lsp_request_async(self.client, "query/cancel", { ownerUri = self.owner_uri })
+	utils.lsp_request_async(self.client, "query/cancel", { ownerUri = self:get_owner_uri() })
 end
 
 --- Parses a query/message string to find the number of rows affected.
@@ -280,7 +285,7 @@ end
 ---@param result table
 ---@return boolean success True if parameters were updated.
 function QueryManager:update_connection_params(result)
-	if not (result and result.ownerUri == self.owner_uri and result.connection) then
+	if not (result and result.ownerUri == self:get_owner_uri() and result.connection) then
 		return false
 	end
 
