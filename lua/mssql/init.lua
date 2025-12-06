@@ -278,6 +278,49 @@ local function set_auto_commands(opts)
 
 		end,
 	})
+
+	-- auto-reconnect on rename (:saveas)
+	vim.api.nvim_create_autocmd("BufFilePost", {
+		group = "AutoNameSQL",
+		pattern = "*.sql",
+		callback = function(args)
+			local buf = args.buf
+			local qm = query_managers[buf]
+
+			if qm and qm:get_state() == qm.states.Connected then
+				local params = qm:get_connect_params()
+				qm:set_state(qm.states.Disconnected)
+
+				if current_config.auto_connect_on_rename then
+					utils.log_info("Buffer renamed. Re-establishing connection...")
+					utils.try_resume(coroutine.create(function()
+						local attempts = 0
+						local max_attempts = 10
+						local connected = false
+
+						while attempts < max_attempts do
+							utils.defer_async(100)
+
+							local success, _ = pcall(function()
+								qm:connect_async(params)
+							end)
+
+							if success then
+								connected = true
+								break
+							end
+
+							attempts = attempts + 1
+						end
+
+						if not connected then
+							utils.log_error("Failed to auto reconnect after rename. Please connect manually.")
+						end
+					end))
+				end
+			end
+		end
+	})
 end
 
 local plugin_opts

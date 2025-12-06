@@ -17,6 +17,7 @@
 ---@field max_rows integer? Max rows to return (default 100).
 ---@field max_column_width integer? Max text length before truncation.
 ---@field query_timeout integer? Timeout in seconds (nil or < 0 for no timeout).
+---@field auto_connect_on_rename boolean? Automatically re-establish the connection when a buffer is renamed (default true).
 ---@field execute_generated_select_statements boolean? Auto-execute SELECTs from finder.
 ---@field lsp_settings table? Settings passed to mssql language server.
 ---@field sql_buffer_options table<string, any>? Vim options for SQL buffers.
@@ -61,6 +62,9 @@ local M = {
 
 	-- Timeout for query execution in seconds, use less than 0 or nil for no timeout
 	query_timeout = nil,
+
+	-- Automatically re-establish the connection when a buffer is renamed (e.g. :saveas)
+	auto_connect_on_rename = true,
 
 	-- When choosing a table/view in the finder, immediately execute the generated SELECT statement
 	execute_generated_select_statements = true,
