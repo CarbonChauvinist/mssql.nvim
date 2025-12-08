@@ -17,7 +17,7 @@ return {
 			if params and params.connection and params.connection.options then
 				current_db = params.connection.options.database
 			end
-			if current_db == "TestDbB" and state == qm.states.Connected then
+			if current_db == "TestDbB" and state == qm.states.connected then
 				return true
 			end
 			return false
@@ -25,7 +25,7 @@ return {
 
 		assert(switch_success, "Switch database did not successfully complete.")
 		assert(current_db == "TestDbB", "Database did not switch to TestDbB. Current: " .. tostring(current_db))
-		assert(state == qm.states.Connected, "Query Manager did not return to Connected state.")
+		assert(state == qm.states.connected, "Query Manager did not return to Connected state.")
 
 		cleanup()
 	end,

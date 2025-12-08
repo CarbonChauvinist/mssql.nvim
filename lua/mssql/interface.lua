@@ -60,20 +60,20 @@ return {
 				if qm then
 					local state = qm.get_state()
 					local states = query_manager_module.states
-					if state == states.Connecting then
+					if state == states.connecting then
 						return {
 							keymaps.new_query,
 							keymaps.new_default_query,
 							keymaps.edit_connections,
 						}
-					elseif state == states.Executing then
+					elseif state == states.executing then
 						return {
 							keymaps.new_query,
 							keymaps.new_default_query,
 							keymaps.edit_connections,
 							keymaps.cancel_query,
 						}
-					elseif state == states.Connected then
+					elseif state == states.connected then
 						return {
 							keymaps.new_query,
 							keymaps.new_default_query,
@@ -89,7 +89,7 @@ return {
 							},
 							keymaps.find_object,
 						}
-					elseif state == states.Disconnected then
+					elseif state == states.disconnected then
 						return {
 							keymaps.new_query,
 							keymaps.new_default_query,
@@ -103,7 +103,7 @@ return {
 								icon = { icon = "", color = "green" },
 							},
 						}
-					elseif state == states.Cancelling then
+					elseif state == states.cancelling then
 						return {
 							keymaps.new_query,
 							keymaps.new_default_query,
@@ -139,9 +139,9 @@ return {
 
 				local state = qm.get_state()
 				local states = query_manager_module.states
-				if state == states.Connecting or state == states.Executing or state == states.Disconnected then
+				if state == states.connecting or state == states.executing or state == states.disconnected then
 					return {}
-				elseif state == states.Connected then
+				elseif state == states.connected then
 					return { keymaps.execute_query }
 				else
 					utils.log_error("Entered unrecognised query state: " .. state)
@@ -200,20 +200,20 @@ return {
 
 			local state = qm.get_state()
 			local states = query_manager_module.states
-			if state == states.Connecting then
+			if state == states.connecting then
 				return {
 					"NewQuery",
 					"NewDefaultQuery",
 					"EditConnections",
 				}
-			elseif state == states.Executing then
+			elseif state == states.executing then
 				return {
 					"NewQuery",
 					"NewDefaultQuery",
 					"EditConnections",
 					"CancelQuery",
 				}
-			elseif state == states.Connected then
+			elseif state == states.connected then
 				return {
 					"NewQuery",
 					"NewDefaultQuery",
@@ -226,14 +226,14 @@ return {
 					"RestoreDatabase",
 					"Find",
 				}
-			elseif state == states.Disconnected then
+			elseif state == states.disconnected then
 				return {
 					"NewQuery",
 					"NewDefaultQuery",
 					"EditConnections",
 					"Connect",
 				}
-			elseif state == states.Cancelling then
+			elseif state == states.cancelling then
 				return {
 					"NewQuery",
 					"NewDefaultQuery",

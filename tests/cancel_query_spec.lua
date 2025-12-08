@@ -12,7 +12,7 @@ return {
 
 	-- sanity check, verify we actually executed query in first place
 	local executing = test_utils.poll(function()
-			return qm:get_state() == qm.states.Executing
+			return qm:get_state() == qm.states.executing
 		end, { timeout_ms = 1000, interval = 50 })
 	assert(executing, "Query did not enter Executing state")
 
@@ -21,7 +21,7 @@ return {
 	local polled_state
 	local is_connected_after_cancel = test_utils.poll(function()
 			polled_state = qm:get_state()
-			return polled_state == qm.states.Connected
+			return polled_state == qm.states.connected
 		end)
 
     -- ensure we're still connected after cancellation

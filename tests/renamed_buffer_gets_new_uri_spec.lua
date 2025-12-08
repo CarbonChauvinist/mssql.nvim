@@ -35,7 +35,7 @@ return {
 		assert(saved_path, "File was not created at " .. new_file)
 
 		local reconnected = test_utils.poll(function()
-			return qm:get_state() == qm.states.Connected
+			return qm:get_state() == qm.states.connected
 		end)
 		assert(reconnected, "Did not auto-reconnect after rename")
 

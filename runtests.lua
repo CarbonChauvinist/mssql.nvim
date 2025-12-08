@@ -88,11 +88,11 @@ local function run_suite()
 	coroutine.resume(coroutine.create(function()
 		print_msg("=== Starting Test Suite ( " .. #test_files .. " files) ===")
 
-		for _, import_path in ipairs(test_files) do
+		for i, import_path in ipairs(test_files) do
 			local test_module = require(import_path)
 
 			if test_module.run_test_async then
-				print_msg("\n--- Running: ".. (test_module.test_name or import_path) .. " ---")
+				print_msg("\n--- Running [" .. i .. "/" .. #test_files .. "]: " .. (test_module.test_name or import_path) .. " ---")
 				local success, err = pcall(test_module.run_test_async)
 
 				if not success then

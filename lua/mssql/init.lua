@@ -48,7 +48,7 @@ end
 local function clean_cache()
 	local in_use_connections = {}
 	for _, qm in pairs(query_managers) do
-		if qm:get_state() ~= qm.states.Disconnected then
+		if qm:get_state() ~= qm.states.disconnected then
 			table.insert(in_use_connections, qm:get_connect_params().connection.options)
 		end
 	end
@@ -287,9 +287,9 @@ local function set_auto_commands(opts)
 			local buf = args.buf
 			local qm = query_managers[buf]
 
-			if qm and qm:get_state() == qm.states.Connected then
+			if qm and qm:get_state() == qm.states.connected then
 				local params = qm:get_connect_params()
-				qm:set_state(qm.states.Disconnected)
+				qm:set_state(qm.states.disconnected)
 
 				if current_config.auto_connect_on_rename then
 					utils.log_info("Buffer renamed. Re-establishing connection...")
@@ -536,13 +536,13 @@ local function switch_database_async(bufnr)
 	if not qm then
 		error("No mssql lsp is attached. Create a new query or open an existing one.", 0)
 	end
-	if qm:get_state() ~= qm.states.Connected then
+	if qm:get_state() ~= qm.states.connected then
 		error("You need to connect first", 0)
 	end
-	local client = qm:get_lsp_client()
 
+	local client = qm:get_lsp_client()
 	local result, err =
-		utils.lsp_request_async(client, "connection/listdatabases", { ownerUri = utils.lsp_file_uri(buf) })
+		utils.lsp_request_async(client, "connection/listdatabases", { ownerUri = utils.lsp_file_uri(bufnr) })
 
 	if err then
 		error("Error listing databases: " .. err.message, 0)
@@ -552,30 +552,34 @@ local function switch_database_async(bufnr)
 
 	local db = utils.ui_select_async(result.databaseNames, { prompt = "Choose database" })
 	utils.safe_assert(db, "No database chosen")
-
-	-- get the connect params first, because they get set
-	-- to nil when we disconnect
+	-- get the connect_params first because they are set to nil when we disconnect
 	local connect_params = qm:get_connect_params()
-	-- disconnect, change the database and connect again
+
+	if not connect_params then
+		error("Internal Error: Connection parameters are missing despite being in Connected state.", 0)
+	end
+	if not (connect_params.connection and connect_params.connection.options) then
+		error("Internal Error: Connection parameters are malformed.", 0)
+	end
+
 	qm:disconnect_async()
-
 	connect_params.connection.options.database = db
-
 	qm:connect_async(connect_params)
 	utils.log_info("Connected")
 end
 
-local connect_async = function(opts, query_manager)
+---@return boolean? success
+local perform_connect_async = function(opts, query_manager)
 	local json = get_connections(opts)
 	if not json then
 		edit_connections(opts)
-		return
+		return false
 	end
 
 	local con_name = utils.ui_select_async(vim.tbl_keys(json), { prompt = "Choose connection" })
 	if not con_name then
 		utils.log_info("No connection chosen")
-		return
+		return false
 	end
 
 	local con = json[con_name]
@@ -597,6 +601,7 @@ local connect_async = function(opts, query_manager)
 	else
 		utils.log_info("Connected")
 	end
+	return true
 end
 
 local function new_query_async()
@@ -672,7 +677,7 @@ local function insert_query_into_buffer(query)
 end
 
 local function backup_database_async(query_manager)
-	if query_manager:get_state() ~= query_manager.states.Connected then
+	if query_manager:get_state() ~= query_manager.states.connected then
 		error("Connect to a database first", 0)
 	end
 	local connect_params = query_manager:get_connect_params()
@@ -703,7 +708,7 @@ STATS = 25]],
 end
 
 local function restore_database_async(query_manager)
-	if query_manager:get_state() ~= query_manager.states.Connected then
+	if query_manager:get_state() ~= query_manager.states.connected then
 		error("Connect to a server first", 0)
 	end
 
@@ -904,8 +909,9 @@ M.connect = function(bufnr)
 		return
 	end
 	utils.try_resume(coroutine.create(function()
-		connect_async(plugin_opts, query_manager)
-		query_manager:initialise_cache_async()
+		if perform_connect_async(plugin_opts, query_manager) then
+			query_manager:initialise_cache_async()
+		end
 	end))
 end
 
@@ -924,7 +930,7 @@ M.refresh_cache = function(bufnr)
 		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
 		return
 	end
-	if qm:get_state() ~= qm.states.Connected then
+	if qm:get_state() ~= qm.states.connected then
 		utils.log_error("You are currently " .. qm:get_state())
 		return
 	end
@@ -976,7 +982,7 @@ M.execute_query = function(bufnr)
 	end
 	utils.try_resume(coroutine.create(function()
 		local query = utils.get_selected_text()
-		if qm:get_state() == qm.states.Disconnected then
+		if qm:get_state() == qm.states.disconnected then
 			connect_to_default(qm, plugin_opts)
 		end
 		clear_message_buffer()
@@ -1022,10 +1028,10 @@ M.lualine_component = {
 
 		local state = qm:get_state()
 
-		if state == qm.states.Disconnected then
+		if state == qm.states.disconnected then
 			local disconnected_icon = plugin_opts.icons.enabled and plugin_opts.icons.disconnected .. " " or ""
 			return disconnected_icon .. "Connect to MSSQL"
-		elseif state == qm.states.Connecting then
+		elseif state == qm.states.connecting then
 			return "Connecting..."
 		end
 
@@ -1049,7 +1055,7 @@ M.lualine_component = {
 			end
 		end
 
-		if state == qm.states.Executing then
+		if state == qm.states.executing then
 			table.insert(status_parts, server_db_string)
 			table.insert(status_parts, "Executing...")
 			if exec_info.elapsed_time then
@@ -1147,7 +1153,7 @@ M.find_object = function(bufnr, callback)
 		utils.log_error("No mssql lsp is attached. Create a new query or open an exising one.")
 		return
 	end
-	if query_manager:get_state() ~= query_manager.states.Connected then
+	if query_manager:get_state() ~= query_manager.states.connected then
 		utils.log_error("You are currently " .. query_manager:get_state())
 		return
 	end

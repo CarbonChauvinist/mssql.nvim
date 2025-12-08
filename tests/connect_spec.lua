@@ -14,7 +14,7 @@ return {
 
 		test_utils.wait_for_intellisenseReady(buf, client)
 		local qm = mssql.get_query_manager(buf)
-		assert(qm:get_state() == qm.states.Connected, "State should be Connected")
+		assert(qm:get_state() == qm.states.connected, "State should be Connected")
 		cleanup()
 	end,
 }

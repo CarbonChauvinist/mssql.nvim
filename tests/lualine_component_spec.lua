@@ -35,7 +35,7 @@ return {
 		mssql.execute_query(buf)
 
 		local dml_finished = test_utils.poll(function()
-			return qm:get_state() == qm.states.Connected
+			return qm:get_state() == qm.states.connected
 		end, { timeout_ms = 5000 })
 		assert(dml_finished, "Query did not finish (Timed out waiting for Connected state).")
 

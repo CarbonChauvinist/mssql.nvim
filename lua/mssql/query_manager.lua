@@ -1,32 +1,106 @@
 local utils = require("mssql.utils")
 local finder = require("mssql.find_object")
+require("mssql.default_opts")
 
----@alias MssqlQueryManagerState "connected"|"disconnected"|"executing a query"|"cancelling a query"|"connecting"
+---@alias MssqlQueryManagerState
+---| "disconnected"
+---| "connecting"
+---| "connected"
+---| "executing"
+---| "cancelling"
 
 ---@class MssqlExecutionInfo
 ---@field rows_affected? number
 ---@field elapsed_time? number
 
+---@class MssqlConnectionOptions
+---@field server? string
+---@field database? string
+---@field user? string
+---@field password? string
+---@field authentication? string
+---@field trustServerCertificate? boolean
+---@field [string] any Allow extra fields passed by config
+
+---@class MssqlConnectionSummary
+---@field databaseName string
+---@field serverName? string
+---@field userName? string
+---@field connectionId? string
+
+---@class MssqlConnectionWrapper
+---@field options MssqlConnectionOptions
+---@field summary? MssqlConnectionSummary
+
+---@class MssqlConnectParams
+---@field ownerUri? string The URI of the buffer owning this connection.
+---@field connection MssqlConnectionWrapper
+
+---@class MssqlQueryCompleteResult
+---@field ownerUri string
+---@field batchSummaries MssqlBatchSummary[]
+
+---@class MssqlBatchSummary
+---@field executionElapsed? string
+---@field resultSetSummaries? MssqlResultSetSummary[]
+---@field rowCount? integer
+
+---@class MssqlResultSetSummary
+---@field rowCount integer
+---@field columnInfo? table
+
+---@class MssqlQueryMessageResult
+---@field ownerUri string
+---@field message MssqlQueryMessage
+
+---@class MssqlQueryMessage
+---@field message string
+---@field isError? boolean
+---@field batchId? integer
+
+---@class MssqlConnectionChangedResult
+---@field ownerUri string
+---@field connection MssqlConnectionSummary
+
 ---@class MssqlQueryManager
 ---@field bufnr integer
 ---@field client vim.lsp.Client
 ---@field state MssqlQueryManagerState
----@field states table<string, MssqlQueryManagerState>
----@field last_connect_params table
+---@field states MssqlQueryManagerStates
+---@field last_connect_params MssqlConnectParams
 ---@field owner_uri string
 ---@field execution_timer uv.uv_timer_t?
 ---@field last_execution_info MssqlExecutionInfo
 ---@field start_time number
 ---@field query_timeout number?
-local QueryManager = {}
-QueryManager.__index = QueryManager
+local MssqlQueryManager = {}
+MssqlQueryManager.__index = MssqlQueryManager
 
-QueryManager.states = {
-	Disconnected = "disconnected",
-	Cancelling = "cancelling a query",
-	Connecting = "connecting",
-	Connected = "connected",
-	Executing = "executing a query",
+---@class MssqlQueryManagerStates
+---@field disconnected MssqlQueryManagerState
+---@field connecting MssqlQueryManagerState
+---@field connected MssqlQueryManagerState
+---@field executing MssqlQueryManagerState
+---@field cancelling MssqlQueryManagerState
+
+MssqlQueryManager.states = {
+	disconnected = "disconnected",
+	connecting = "connecting",
+	connected = "connected",
+	executing = "executing",
+	cancelling = "cancelling",
+}
+
+--- State transition definition type
+---@alias StateTransitionTable table<MssqlQueryManagerState, MssqlQueryManagerState[]>
+
+---@type StateTransitionTable
+local STATE_TRANSITIONS = {
+	disconnected = { "connecting" },
+	connecting = { "connected", "disconnected" },
+	connected = { "executing", "disconnected" },
+	executing = { "connected", "cancelling" },
+	cancelling = { "connected" },
 }
 
 --- Constructor
@@ -34,64 +108,131 @@ QueryManager.states = {
 ---@param client vim.lsp.Client
 ---@param opts MssqlConfig
 ---@return MssqlQueryManager
-function QueryManager.new(bufnr, client, opts)
-	local self = setmetatable({}, QueryManager)
+function MssqlQueryManager.new(bufnr, client, opts)
+	local self = setmetatable({}, MssqlQueryManager)
 
 	self.bufnr = bufnr
 	self.client = client
-	self.state = QueryManager.states.Disconnected
-	self.last_connect_params = {}
+	self.state = MssqlQueryManager.states.disconnected
+	self.last_connect_params = nil
 	self.execution_timer = nil
 	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
 	self.start_time = 0
 	self.query_timeout = opts.query_timeout
 
-	vim.api.nvim_buf_attach(bufnr, false, {
+	local attached = vim.api.nvim_buf_attach(bufnr, false, {
 		on_detach = function()
-			self:cleanup_timer()
+			self:cleanup()
 		end
 	})
+
+	if not attached then
+		utils.log_warn("Failed to attach buffer detachment handler")
+	end
 
 	return self
 end
 
---- Validates the current state before performing an action.
+--- Validates state transition
 ---@param self MssqlQueryManager
----@param expected_state MssqlQueryManagerState
----@param action string Name of the action being attempted.
-local function validate_state(self, expected_state, action)
-	if self.state ~= expected_state then
-		error(("Cannot %s: currently %s"):format(action, self.state), 0)
+---@param new_state MssqlQueryManagerState
+---@param action string
+---@return boolean can_transition
+---@return string? error_message
+local function validate_state_transition(self, new_state, action)
+	local valid_transitions = STATE_TRANSITIONS[self.state]
+	if not valid_transitions then
+		return false, ("Invalid current state %s"):format(self.state)
 	end
+
+	if not vim.tbl_contains(valid_transitions, new_state) then
+		return false, ("Cannot %s from state '%s' to '%s'"):format(
+			action, self.state, new_state
+		)
+	end
+
+	return true
 end
 
 --- Converts passed timeout in seconds to milliseconds.
----@param timeout_seconds? integer Timeout in seconds.
----@return integer? Timeout in milliseconds.
+---@param timeout_seconds? number Timeout in seconds.
+---@return integer? timeout_ms Returns nil for no timeout
 local function calculate_timeout_ms(timeout_seconds)
-	return timeout_seconds and timeout_seconds > 0 and (timeout_seconds * 1000) or nil
+	if timeout_seconds == nil then return nil end
+	if type(timeout_seconds) ~= "number" then
+		error("timeout_seconds must be a number")
+	end
+	if timeout_seconds <= 0 then return nil end
+	return math.floor(timeout_seconds * 1000)
 end
 
---- Dynamically calculate the URI every time, handling renames automatically.
+--- Safely extracts time components from SQL Server elapsed time string
+---@param elapsed_str? string Format: "HH:MM:SS.sss"
+---@return number? seconds Total seconds
+local function parse_sql_elapsed_time(elapsed_str)
+	if not elapsed_str or type(elapsed_str) ~= "string" then
+		return nil
+	end
+
+	local hours, minutes, seconds = elapsed_str:match("(%d+):(%d+):([%d.]+)")
+	if not hours or minutes or seconds then
+		return nil
+	end
+
+	return (tonumber(hours) or 0) * 3600
+		+ (tonumber(minutes) or 0) * 60
+		+ (tonumber(seconds) or 0)
+end
+
+---@param result any
+---@return boolean is_MssqlQueryCompleteResult
+local function is_valid_query_complete_result(result)
+	return type(result) == "table"
+		and type(result.batchSummaries) == "table"
+		and #result.batchSummaries > 0
+		and type(result.ownerUri) == "string"
+end
+
+---@param result any
+---@return  boolean is_MssqlConnectionChangedResult
+local function is_valid_connection_changed_result(result)
+	return type(result) == "table"
+		and type(result.ownerUri) == "string"
+		and type(result.connection) == "table"
+end
+
+--- Dynamically calculate the URI every time
 ---@return string
-function QueryManager:get_owner_uri()
+function MssqlQueryManager:get_owner_uri()
 	return utils.lsp_file_uri(self.bufnr) or ""
 end
 
---- Sets the internal state and redraws the statusline.
+--- Sets the internal state, with validation, and redraws the statusline.
 ---@param new_state MssqlQueryManagerState
-function QueryManager:set_state(new_state)
+---@return boolean success
+function MssqlQueryManager:set_state(new_state)
+	local can, err = validate_state_transition(self, new_state, "change state")
+	if not can then
+		utils.log_warn(err)
+		return false
+	end
+
 	self.state = new_state
-	vim.cmd("redrawstatus")
+	vim.schedule(function()
+		if self.bufnr and vim.api.nvim_buf_is_valid(self.bufnr) then
+			vim.cmd("redrawstatus")
+		end
+	end)
+	return true
 end
 
 ---@return MssqlQueryManagerState
-function QueryManager:get_state()
+function MssqlQueryManager:get_state()
 	return self.state
 end
 
 --- Stops and cleans up the execution timer.
-function QueryManager:cleanup_timer()
+function MssqlQueryManager:cleanup_timer()
 	if self.execution_timer and not self.execution_timer:is_closing() then
 		self.execution_timer:stop()
 		self.execution_timer:close()
@@ -100,84 +241,136 @@ function QueryManager:cleanup_timer()
 end
 
 --- Stops timer and calculates final time.
-function QueryManager:stop_execution_timer()
+function MssqlQueryManager:stop_execution_timer()
 	if self.execution_timer then
 		if self.start_time > 0 then
 			self.last_execution_info.elapsed_time = (vim.loop.now() - self.start_time) / 1000
 		end
 		self:cleanup_timer()
 		self.start_time = 0
-		vim.cmd("redrawstatus")
+		vim.schedule(function()
+			if self.bufnr and vim.api.nvim_buf_is_valid(self.bufnr) then
+				vim.cmd("redrawstatus")
+			end
+		end)
 	end
 end
 
 --- Starts the timer loop for execution tracking.
-function QueryManager:start_execution_timer()
+---@return boolean success
+function MssqlQueryManager:start_execution_timer()
 	self:stop_execution_timer()
-	self.last_execution_info.elapsed_time = 0
-	self.last_execution_info.rows_affected = nil
+	self.last_execution_info = {
+		rows_affected = nil,
+		elapsed_time = 0
+	}
 	self.start_time = vim.loop.now()
 
-	self.execution_timer = vim.loop.new_timer()
-	if self.execution_timer then
-		self.execution_timer:start(0, 1000, vim.schedule_wrap(function()
-			if self.state == QueryManager.states.Executing then
+	local timer = vim.loop.new_timer()
+	if not timer then
+		utils.log_error("Failed to create execution timer")
+		return false
+	end
+
+	local bufnr = self.bufnr
+	if not bufnr then
+		utils.log_error("QueryManager object has no buffer assigned")
+		return false
+	end
+
+	local success, err = pcall(function()
+		timer:start(0, 1000, vim.schedule_wrap(function()
+			if not vim.api.nvim_buf_is_valid(bufnr) then
+				self:cleanup_timer()
+				return
+			end
+
+			if self.state == MssqlQueryManager.states.executing then
 				self.last_execution_info.elapsed_time = (vim.loop.now() - self.start_time) / 1000
 				vim.cmd("redrawstatus")
 			else
 				self:stop_execution_timer()
 			end
 		end))
+	end)
+
+	if not success then
+		utils.log_error("Failed to start execution timer: " .. (err or "unknown error"))
+		timer:close()
+		return false
 	end
+
+	self.execution_timer = timer
+	return true
 end
 
 --- Initiates an async connection request.
----@param connect_params table
-function QueryManager:connect_async(connect_params)
-	validate_state(self, QueryManager.states.Disconnected, "connect")
+---@param connect_params MssqlConnectParams
+---@return boolean success
+---@return string? error_message
+function MssqlQueryManager:connect_async(connect_params)
+	if not self:is_valid() then return false, "Object is invalid" end
+	if not self:set_state(MssqlQueryManager.states.connecting) then
+		return false, "Cannot transition to connecting state"
+	end
 
 	connect_params.ownerUri = self:get_owner_uri()
-	self:set_state(QueryManager.states.Connecting)
 
 	local _, err = utils.lsp_request_async(self.client, "connection/connect", connect_params)
 	if err then
-		self:set_state(QueryManager.states.Disconnected)
-		error("Could not connect: " .. err.message, 0)
+		self:set_state(MssqlQueryManager.states.disconnected)
+		return false, ("Could not connect: %s"):format(err.message)
 	end
 
-	local result
-	result, err = utils.wait_for_notification_async(self.bufnr, self.client, "connection/complete", 10000)
+	local timeout_ms = 10000
+	local result, wait_err = utils.wait_for_notification_async(
+		self.bufnr, self.client, "connection/complete", timeout_ms
+	)
 
-	if err or (result and result.errorMessage and result.errorMessage ~= vim.NIL) then
-		self:set_state(QueryManager.states.Disconnected)
-		error("Error in connecting: " .. (err and err.message or result.errorMessage), 0)
+	if wait_err or (result and result.errorMessage and result.errorMessage ~= vim.NIL) then
+		self:set_state(MssqlQueryManager.states.disconnected)
+		return false, "Error in connecting: " .. (wait_err and wait_err.message or result.errorMessage)
 	end
 
 	if result and result.connectionSummary then
+		if not connect_params.connection then
+			connect_params.connection = { options = {} }
+		end
+		connect_params.connection.summary = result.connectionSummary
 		connect_params.connection.options.database = result.connectionSummary.databaseName
 		connect_params.connection.options.DatabaseDisplayName = result.connectionSummary.databaseName
 	end
 
-	self:set_state(QueryManager.states.Connected)
 	self.last_connect_params = connect_params
+	return self:set_state(MssqlQueryManager.states.connected)
 end
 
 --- Disconnects the current session.
-function QueryManager:disconnect_async()
-	validate_state(self, QueryManager.states.Connected, "disconnect")
+---@return boolean success
+function MssqlQueryManager:disconnect_async()
+	if not self:is_valid() then return false end
+	if not self:set_state(MssqlQueryManager.states.disconnected) then
+		return false
+	end
 	utils.lsp_request_async(self.client, "connection/disconnect", { ownerUri = self:get_owner_uri() })
-	self:set_state(QueryManager.states.Disconnected)
-	self.last_connect_params = {}
+	self.last_connect_params = nil
 	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
+	return true
 end
 
 --- Executes an SQL query string.
 ---@param query string
 ---@return table? result The query result object.
-function QueryManager:execute_async(query)
-	validate_state(self, QueryManager.states.Connected, "execute")
-	self:set_state(QueryManager.states.Executing)
-	self:start_execution_timer()
+---@return string? error_message
+function MssqlQueryManager:execute_async(query)
+	if not self:is_valid() then return nil, "Object is invalid." end
+	if not self:set_state(MssqlQueryManager.states.executing) then
+		return nil, "Cannot transition to executing state"
+	end
+	if not self:start_execution_timer() then
+		self:set_state(MssqlQueryManager.states.connected)
+		return nil, "Failed to start execution timer"
+	end
 
 	local result, err = utils.lsp_request_async(self.client, "query/executeString", {
 		query = query,
@@ -186,8 +379,8 @@ function QueryManager:execute_async(query)
 
 	if err or not result then
 		self:stop_execution_timer()
-		self:set_state(QueryManager.states.Connected)
-		error(err and ("Error executing query: " .. err.message) or "Could not execute query", 0)
+		self:set_state(MssqlQueryManager.states.connected)
+		return nil, err and ("Error executing query: " .. err.message) or "Could not execute query"
 	end
 
 	return self:wait_for_query_completion()
@@ -195,7 +388,8 @@ end
 
 --- Internal helper to wait for completion notification.
 ---@return table? result
-function QueryManager:wait_for_query_completion()
+---@return string? error_message
+function MssqlQueryManager:wait_for_query_completion()
 	local timeout_ms = calculate_timeout_ms(self.query_timeout)
 	local result, err = utils.wait_for_notification_async(
 		self.bufnr, self.client, "query/complete", timeout_ms
@@ -203,23 +397,29 @@ function QueryManager:wait_for_query_completion()
 
 	self:stop_execution_timer()
 	vim.cmd("redrawstatus")
-	if self.state == QueryManager.states.Cancelling then
-		self:set_state(QueryManager.states.Connected)
+	if self.state == MssqlQueryManager.states.cancelling then
+		self:set_state(MssqlQueryManager.states.connected)
 		utils.log_info("Query was cancelled.")
-		return
+		return nil, "cancelled"
 	end
 
 	if err and err.code == -32001 then
-		return self:handle_timeout()
+		return nil, self:handle_timeout()
 	end
 
-	self:set_state(QueryManager.states.Connected)
+	if err then
+		self:set_state(MssqlQueryManager.states.connected)
+		return nil, "Query failed: " .. (err.message or "unknown error")
+	end
+
+	self:set_state(MssqlQueryManager.states.connected)
 	return result
 end
 
 --- Handles execution timeout by attempting to cancel.
 ---@param timeout_ms? integer
-function QueryManager:handle_timeout(timeout_ms)
+---@return string error_message
+function MssqlQueryManager:handle_timeout(timeout_ms)
 	timeout_ms = timeout_ms or 10000
 	utils.log_error("Query execution timed out...")
 	self:cancel_async()
@@ -234,76 +434,119 @@ function QueryManager:handle_timeout(timeout_ms)
 		utils.log_info("Cancellation confirmed.")
 	end
 
-	self:set_state(QueryManager.states.Connected)
-	error("Query execution connection timed out.", 0)
+	self:set_state(MssqlQueryManager.states.connected)
+	return "Query execution connection timed out."
 end
 
 --- Cancels the currently running query.
-function QueryManager:cancel_async()
-	validate_state(self, QueryManager.states.Executing, "cancel")
-	self:set_state(QueryManager.states.Cancelling)
-	utils.lsp_request_async(self.client, "query/cancel", { ownerUri = self:get_owner_uri() })
+---@return boolean success
+function MssqlQueryManager:cancel_async()
+	if not self:is_valid() then return false end
+	if not self:set_state(MssqlQueryManager.states.cancelling) then
+		return false
+	end
+
+	local _, err = utils.lsp_request_async(self.client, "query/cancel", { ownerUri = self:get_owner_uri() })
+	if err then
+		self:set_state(MssqlQueryManager.states.connected)
+		return false
+	end
+
+	return true
 end
 
 --- Parses a query/message string to find the number of rows affected.
 --- NOTE: Relies on the specific "(N rows affected)" format from the LSP.
 ---@param message string
-function QueryManager:parse_rows_affected_message(message)
+---@return integer? row_count
+function MssqlQueryManager:parse_rows_affected_message(message)
+	if type(message) ~= "string" then
+		return nil
+	end
+
 	local row_count = string.match(message, "%((%d+) rows? affected%)")
 	if row_count then
-		self.last_execution_info.rows_affected = tonumber(row_count)
+		return tonumber(row_count)
 	end
+
+	return nil
 end
 
 --- Sets the final query elapsed time and row count from server results.
 --- Prioritizes DML row counts if they exist, otherwise uses the SELECT row count.
----@param final_time number? The precise final execution time in seconds.
----@param select_row_count number The row count returned by the SELECT statement.
-function QueryManager:set_final_execution_stats(final_time, select_row_count)
-	self.last_execution_info.elapsed_time = final_time
-	if self.last_execution_info.rows_affected == nil then
+---@param final_time? number The precise final execution time in seconds.
+---@param select_row_count? number The row count returned by the SELECT statement.
+function MssqlQueryManager:set_final_execution_stats(final_time, select_row_count)
+	if final_time then
+		self.last_execution_info.elapsed_time = final_time
+	end
+
+	if self.last_execution_info.rows_affected == nil and select_row_count then
 		self.last_execution_info.rows_affected = select_row_count
 	end
 end
 
----@return table params
-function QueryManager:get_connect_params()
+---@return MssqlConnectParams? params Returns nil if not connected
+function MssqlQueryManager:get_connect_params()
+	if not self.last_connect_params then
+		return nil
+	end
 	return vim.tbl_deep_extend("keep", self.last_connect_params, {})
 end
 
+--- Safely retrieves the inner connection options (server, db, user)
+---@return MssqlConnectionOptions? options Returns nil if not connected or configured
+function MssqlQueryManager:get_connection_options()
+	if self.last_connect_params and self.last_connect_params.connection then
+		return self.last_connect_params.connection.options
+	end
+	return nil
+end
+
 ---@return vim.lsp.Client
-function QueryManager:get_lsp_client()
+function MssqlQueryManager:get_lsp_client()
 	return self.client
 end
 
 ---@return MssqlExecutionInfo
-function QueryManager:last_execution()
-	return self.last_execution_info
+function MssqlQueryManager:last_execution()
+	return vim.deepcopy(self.last_execution_info)
 end
 
 --- Updates connection parameters based on notification result.
----@param result table
+---@param result MssqlConnectionChangedResult
 ---@return boolean success True if parameters were updated.
-function QueryManager:update_connection_params(result)
-	if not (result and result.ownerUri == self:get_owner_uri() and result.connection) then
+function MssqlQueryManager:update_connection_params(result)
+	if not is_valid_connection_changed_result(result) then
 		return false
 	end
 
-	self.last_connect_params = vim.tbl_deep_extend("force", self.last_connect_params, {
-		connection = {
-			options = {
-				user = result.connection.userName,
-				database = result.connection.databaseName,
-				server = result.connection.serverName,
-			},
-		},
-	})
+	if result.ownerUri ~= self:get_owner_uri() then
+		return false
+	end
+
+
+	if not self.last_connect_params then
+		self.last_connect_params = {
+			connection = { options = {} }
+		}
+	end
+
+	if not self.last_connect_params.connection then
+		self.last_connect_params.connection = { options = {} }
+	end
+
+	self.last_connect_params.connection.summary = result.connection
+	self.last_connect_params.connection.options.user = result.connection.userName
+	self.last_connect_params.connection.options.database = result.connection.databaseName
+	self.last_connect_params.connection.options.server = result.connection.serverName
+
 	return true
 end
 
 --- Handler for connectionchanged notification.
----@param result table
-function QueryManager:connectionchanged_async(result)
+---@param result MssqlConnectionChangedResult
+function MssqlQueryManager:connectionchanged_async(result)
 	if self:update_connection_params(result) then
 		self:initialise_cache_async()
 	end
@@ -311,55 +554,103 @@ end
 
 -- Passthroughs to Finder (passing client/params explicility)
 
-function QueryManager:initialise_cache_async(force)
-	return finder.initialise_cache_async(self.client, self.last_connect_params.connection.options, force)
+--- Initialize cache for finder
+---@param force boolean? Get a new cache and overwrite.
+---@return boolean success
+function MssqlQueryManager:initialise_cache_async(force)
+	local options = self:get_connection_options()
+	if not options then
+		utils.log_warn("Cannot initialize cache: not connected")
+		return false
+	end
+
+	return finder.initialise_cache_async(
+		self.client,
+		self.last_connect_params.connection.options,
+		force
+	)
 end
 
-function QueryManager:find_async()
-	return finder.find_async(self.last_connect_params.connection.options, self.client)
+---@return boolean? success
+function MssqlQueryManager:find_async()
+	local options = self:get_connection_options()
+	if not options then
+		utils.log_warn("Cannot find objects: not connected")
+		return
+	end
+
+	return finder.find_async(
+		self.last_connect_params.connection.options,
+		self.client
+	)
 end
 
-function QueryManager:is_refreshing()
+---@return boolean? is_refreshing Returns nil if not connected
+function MssqlQueryManager:is_refreshing()
+	local options = self:get_connection_options()
+	if options then return nil end
+
 	return finder.is_refreshing(self.last_connect_params.connection.options)
 end
 
 --- Handlers (called by LSP callbacks)
 
 ---@param result table
-function QueryManager:handle_query_complete(result)
-	local batch_summary = result.batchSummaries and result.batchSummaries[#result.batchSummaries]
+function MssqlQueryManager:handle_query_complete(result)
+	if not is_valid_query_complete_result(result) then
+		utils.log_warn("Invalid query complete result received")
+		return
+	end
+
+	local batch_summary = result.batchSummaries[#result.batchSummaries]
 	if not batch_summary then
 	  return
 	end
 
-	local final_elapsed_time = 0
-	local elapsed_str = batch_summary.executionElapsed
-
-	-- guard against cancelled queries which may not have executionElapsed field populated
-	if elapsed_str then
-		local hours, minutes, seconds = elapsed_str:match("(%d+):(%d+):([%d.]+)")
-		final_elapsed_time = (tonumber(hours) or 0) * 3600
-		  + (tonumber(minutes) or 0) * 60
-		  + (tonumber(seconds) or 0)
-	end
+	local final_elapsed_time = parse_sql_elapsed_time(batch_summary.executionElapsed)
 
 	-- Get total row count for SELECT statements only
 	local total_row_count = 0
 	if batch_summary.resultSetSummaries and #batch_summary.resultSetSummaries > 0 then
-	  total_row_count = batch_summary.resultSetSummaries[#batch_summary.resultSetSummaries].rowCount
+		local last_result_set = batch_summary.resultSetSummaries[#batch_summary.resultSetSummaries]
+		total_row_count = last_result_set.rowCount or 0
 	end
 
 	self:set_final_execution_stats(final_elapsed_time, total_row_count)
 end
 
----@param result table
-function QueryManager:handle_query_message(result)
-	local ok, err = pcall(function()
-		self:parse_rows_affected_message(result.message.message)
-	end)
-	if not ok then
-		utils.log_warn("Failed to parse rows affected: " .. err)
+---@param result MssqlQueryMessageResult
+function MssqlQueryManager:handle_query_message(result)
+	if not result or not result.message or type(result.message.message) ~= "string" then
+		return
+	end
+
+	local row_count = self:parse_rows_affected_message(result.message.message)
+	if row_count then
+		self.last_execution_info.rows_affected = row_count
 	end
 end
 
-return QueryManager
+function MssqlQueryManager:cleanup()
+	self:cleanup_timer()
+
+	if self._detach_handler and vim.api.nvim_buf_is_valid(self.bufnr) then
+		pcall(vim.api.nvim_buf_detach, self.bufnr)
+		self._detach_handler = nil
+	end
+
+	self.state = MssqlQueryManager.states.disconnected
+
+	self.client = nil
+end
+
+--- Validates if the QueryManager instances is still usable
+---@return boolean is_valid
+function MssqlQueryManager:is_valid()
+	return self.client ~= nil
+		and self.bufnr ~= nil
+		and vim.api.nvim_buf_is_valid(self.bufnr)
+		and self.client.id ~= nil
+end
+
+return MssqlQueryManager

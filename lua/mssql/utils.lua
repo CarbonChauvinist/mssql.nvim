@@ -243,6 +243,9 @@ return {
 	log_info = function(msg)
 		log(msg, vim.log.levels.INFO)
 	end,
+	log_warn = function(msg)
+		log(msg, vim.log.levels.WARN)
+	end,
 	log_error = function(msg)
 		log(msg, vim.log.levels.ERROR)
 	end,

@@ -16,15 +16,15 @@ return {
 		local state = qm:get_state()
 		local attempts = 0
 
-		while state ~= qm.states.Connected and attempts < 50 do
+		while state ~= qm.states.connected and attempts < 50 do
 			test_utils.defer_async(100)
 			state = qm:get_state()
 			attempts = attempts + 1
 		end
 
 		assert(
-			state == qm.states.Connected,
-			"Query manager state was not reset. Expected '" .. qm.states.Connected .. "' got '" .. state .. "'"
+			state == qm.states.connected,
+			"Query manager state was not reset. Expected '" .. qm.states.connected .. "' got '" .. state .. "'"
 		)
 
 		-- test regular quick query to ensure connection is still useable

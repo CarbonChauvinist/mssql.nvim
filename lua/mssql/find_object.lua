@@ -244,6 +244,7 @@ end
 
 -- Initialises the cache, unless it already exists
 -- If force is true, then gets a new cache and overwrites
+---@return boolean success
 local initialise_cache_async = function(lsp_client, connection_options, force)
 	local key = vim.json.encode(connection_options)
 	if not global_cache[key] then
@@ -252,7 +253,7 @@ local initialise_cache_async = function(lsp_client, connection_options, force)
 
 	-- don't refresh if we are already refreshing or have refreshed previously
 	if (global_cache[key].cache or is_refreshing(key)) and not force then
-		return
+		return false
 	end
 
 	-- cancel any currently running
@@ -268,6 +269,7 @@ local initialise_cache_async = function(lsp_client, connection_options, force)
 	if not cancellation_token.cancel then
 		global_cache[key].cache = new_cache
 	end
+	return true
 end
 
 -- Picker
