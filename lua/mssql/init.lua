@@ -125,8 +125,16 @@ local function enable_lsp()
 			end,
 		},
 		on_attach = function(client, bufnr)
-			if not query_managers[bufnr] then
+			local qm = query_managers[bufnr]
+
+			if not qm then
 				query_managers[bufnr] = query_manager_module.new(bufnr, client, current_config)
+			else
+				-- existing buffer reloaded (i.e. ':edit')
+				qm.client = client
+
+				local success, err = utils.reconnect_session(qm, "Session reloaded")
+				if not success then utils.log_error(err) end
 			end
 
 			-- see the wait_for_on_attach_async function below
@@ -137,46 +145,46 @@ local function enable_lsp()
 				attach_handlers[bufnr] = nil
 			end
 
-      local qm = query_managers[bufnr]
-      if qm then
-        local buffer_uri = utils.lsp_file_uri(bufnr)
+		  qm = query_managers[bufnr]
+		  if qm then
+			local buffer_uri = utils.lsp_file_uri(bufnr)
 
-		-- define handlers as local variables so we can unregister later
-        -- for query stats (elapsed time, rows affected from SELECT queries)
-        -- avoids conflicts with execute_async when registered this way
-		local on_query_complete = function(_, result, _)
-			if not (result and result.ownerUri and result.ownerUri == buffer_uri) then return end
+			-- define handlers as local variables so we can unregister later
+			-- for query stats (elapsed time, rows affected from SELECT queries)
+			-- avoids conflicts with execute_async when registered this way
+			local on_query_complete = function(_, result, _)
+				if not (result and result.ownerUri and result.ownerUri == buffer_uri) then return end
 
-			qm:handle_query_complete(result)
-		end
-
-        -- DML rows affected query stats
-		local on_query_message = function(_, result, _)
-			if not vim.api.nvim_buf_is_valid(bufnr) then return end
-			if not (result and result.ownerUri and result.ownerUri == buffer_uri) then return end
-
-			qm:handle_query_message(result)
-
-			if result.message and result.message.message then
-				current_config.view_messages_in(result.message.message, result.message.isError)
+				qm:handle_query_complete(result)
 			end
-		end
 
-		utils.register_lsp_handler(client, "query/complete", on_query_complete)
-		utils.register_lsp_handler(client, "query/message", on_query_message)
+			-- DML rows affected query stats
+			local on_query_message = function(_, result, _)
+				if not vim.api.nvim_buf_is_valid(bufnr) then return end
+				if not (result and result.ownerUri and result.ownerUri == buffer_uri) then return end
 
-		-- handle cleanup
-		vim.api.nvim_create_autocmd("LspDetach", {
-			buffer = bufnr,
-			group = cleanup_group,
-			callback = function(args)
-				if args.data.client_id == client.id then
-					utils.unregister_lsp_handler(client, "query/complete", on_query_complete)
-					utils.unregister_lsp_handler(client, "query/message", on_query_message)
+				qm:handle_query_message(result)
+
+				if result.message and result.message.message then
+					current_config.view_messages_in(result.message.message, result.message.isError)
 				end
 			end
-		})
-	   end
+
+			utils.register_lsp_handler(client, "query/complete", on_query_complete)
+			utils.register_lsp_handler(client, "query/message", on_query_message)
+
+			-- handle cleanup
+			vim.api.nvim_create_autocmd("LspDetach", {
+				buffer = bufnr,
+				group = cleanup_group,
+				callback = function(args)
+					if args.data.client_id == client.id then
+						utils.unregister_lsp_handler(client, "query/complete", on_query_complete)
+						utils.unregister_lsp_handler(client, "query/message", on_query_message)
+					end
+				end
+			})
+		   end
 
 		end,
 	}
@@ -266,6 +274,7 @@ local function set_auto_commands(opts)
 			local buf = args.buf
 
 			if query_managers[buf] then
+				query_managers[buf]:cleanup()
 				query_managers[buf] = nil
 				vim.schedule(function()
 					clean_cache()
@@ -287,36 +296,10 @@ local function set_auto_commands(opts)
 			local buf = args.buf
 			local qm = query_managers[buf]
 
-			if qm and qm:get_state() == qm.states.connected then
-				local params = qm:get_connect_params()
-				qm:set_state(qm.states.disconnected)
-
-				if current_config.auto_connect_on_rename then
-					utils.log_info("Buffer renamed. Re-establishing connection...")
-					utils.try_resume(coroutine.create(function()
-						local attempts = 0
-						local max_attempts = 10
-						local connected = false
-
-						while attempts < max_attempts do
-							utils.defer_async(100)
-
-							local success, _ = pcall(function()
-								qm:connect_async(params)
-							end)
-
-							if success then
-								connected = true
-								break
-							end
-
-							attempts = attempts + 1
-						end
-
-						if not connected then
-							utils.log_error("Failed to auto reconnect after rename. Please connect manually.")
-						end
-					end))
+			if qm and qm:get_state() == qm.states.connected and current_config.auto_connect_on_rename then
+				local success, err = utils.reconnect_session(qm, "Buffer renamed")
+				if not success then
+					utils.log_error(err)
 				end
 			end
 		end

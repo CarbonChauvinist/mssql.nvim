@@ -445,7 +445,7 @@ M.test_scaffold = function(opts)
 end
 
 --- Porcelain to get results buffer, wait for results and return.
----@param opts { res_buf: integer?, timeout_ms: integer?} Options table.
+---@param opts? { res_buf: integer?, timeout_ms: integer?} Options table.
 ---@return integer? buf Results buffer.
 ---@return boolean status Whether call was successful.
 ---@return string? contents Results buffer contents.

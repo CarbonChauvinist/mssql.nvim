@@ -98,7 +98,7 @@ MssqlQueryManager.states = {
 local STATE_TRANSITIONS = {
 	disconnected = { "connecting" },
 	connecting = { "connected", "disconnected" },
-	connected = { "executing", "disconnected" },
+	connected = { "connecting", "executing", "disconnected" },
 	executing = { "connected", "cancelling" },
 	cancelling = { "connected" },
 }
@@ -140,6 +140,11 @@ end
 ---@return boolean can_transition
 ---@return string? error_message
 local function validate_state_transition(self, new_state, action)
+	-- allow "no-op" transititions, if we are already in target state it's valid
+	if self.state == new_state then
+		return true
+	end
+
 	local valid_transitions = STATE_TRANSITIONS[self.state]
 	if not valid_transitions then
 		return false, ("Invalid current state %s"):format(self.state)
@@ -631,15 +636,13 @@ function MssqlQueryManager:handle_query_message(result)
 	end
 end
 
+--- Stop activity but preserve state needed for reloads (i.e. :edit)
 function MssqlQueryManager:cleanup()
 	self:cleanup_timer()
 
-	if self._detach_handler and vim.api.nvim_buf_is_valid(self.bufnr) then
-		pcall(vim.api.nvim_buf_detach, self.bufnr)
-		self._detach_handler = nil
-	end
-
 	self.state = MssqlQueryManager.states.disconnected
+	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
+	self.start_time = 0
 
 	self.client = nil
 end
