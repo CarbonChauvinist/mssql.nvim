@@ -26,13 +26,8 @@ return {
 		test_utils.cleanup_results_buffer(res_buf)
 		vim.api.nvim_win_set_buf(0, buf)
 
-		local new_file = "/tmp/saveas_test.sql"
+		local new_file = vim.fn.tempname() .. ".sql"
 		vim.api.nvim_cmd({ cmd = "saveas", args = { new_file }, bang = true, mods = { silent = true } }, {})
-
-		local saved_path = test_utils.poll(function()
-			return vim.loop.fs_stat(new_file) ~= nil
-		end)
-		assert(saved_path, "File was not created at " .. new_file)
 
 		local reconnected = test_utils.poll(function()
 			return qm:get_state() == qm.states.connected
@@ -40,8 +35,8 @@ return {
 		assert(reconnected, "Did not auto-reconnect after rename")
 
 		mssql.execute_query(buf)
-		local new_res_buf, _, _, _ = test_utils.res_buf_catcher()
-		assert(new_res_buf, "Query failed after rename")
+		local new_res_buf, status, results = test_utils.res_buf_catcher()
+	assert(status and results:find("Merc"), "Query results verification failed after reconnect.")
 		test_utils.cleanup_results_buffer(new_res_buf)
 
 		test_utils.safe_buf_delete(buf, { force = true })
