@@ -9,7 +9,6 @@ return {
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
 
 		local temp_file = vim.fn.tempname() .. ".sql"
-		print("current filename is: " .. temp_file)
 		vim.api.nvim_cmd({ cmd = "saveas", args = { temp_file }, bang = true, mods = { silent = true } }, {})
 		vim.cmd("edit!")
 

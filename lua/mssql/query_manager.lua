@@ -385,7 +385,7 @@ function MssqlQueryManager:execute_async(query)
 	if err or not result then
 		self:stop_execution_timer()
 		self:set_state(MssqlQueryManager.states.connected)
-		return nil, err and ("Error executing query: " .. err.message) or "Could not execute query"
+		return nil, err and ("Error executing query: " .. (err.message or vim.inspect(err))) or "Could not execute query"
 	end
 
 	return self:wait_for_query_completion()

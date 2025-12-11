@@ -4,6 +4,9 @@ local mssql = require("mssql")
 ---@class tests.utils
 local M = {}
 
+---@type integer
+local next_mock_client_id = 10000
+
 local res_buf_pattern = "results %d?%d?%-%d?%d?.md$"
 
 -- Simple aliases for convenience.
@@ -648,7 +651,7 @@ M.assert_visual_alignment = function(lines)
 end
 
 --- Runs a function within a mocked environment for logging, input, and LSP calls.
----@param mocks { input_value: string, client_response: table } Mock data configuration.
+---@param mocks { input_value: string?, client_response: table?, client_error: table? } Mock data configuration.
 ---@param func function The test function to run.
 ---@return table captures { logs: string[], cmd: string[], requests: table[] }
 M.run_with_mocks = function(mocks, func)
@@ -660,20 +663,23 @@ M.run_with_mocks = function(mocks, func)
 	local orig_cmd = vim.cmd
 	local orig_get_client = utils.get_lsp_client
 
-	---@diagnostic disable-next-line: duplicate-set-field
+	---@diagnostic disable: duplicate-set-field
 	vim.fn.input = function() return mocks.input_value end
 	utils.log_info = function(msg) table.insert(captures.logs, "INFO: " .. msg) end
 	utils.log_error = function(msg) table.insert(captures.logs, "ERROR: " .. msg) end
-	---@diagnostic disable-next-line: duplicate-set-field
 	vim.cmd = function(cmd) table.insert(captures.cmds, cmd) end
 
+	next_mock_client_id = next_mock_client_id + 1
+
 	local mock_client = {
+		id = next_mock_client_id,
 		request = function(_, method, params, cb)
 			table.insert(captures.requests, { method = method, params = params })
-			vim.schedule(function() cb(nil, mocks.client_response or { success = true }) end)
+			vim.schedule(function() cb(mocks.client_error, mocks.client_response or { success = true }) end)
 		end,
 	}
 	utils.get_lsp_client = function() return mock_client end
+	---@diagnostic enable: duplicate-set-field
 
 	func()
 
