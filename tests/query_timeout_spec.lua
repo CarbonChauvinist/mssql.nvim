@@ -3,43 +3,60 @@ local utils = require("mssql.utils")
 local test_utils = require("tests.utils")
 
 return {
-	test_name = "Query should time out and state should be reset",
+	test_name = "Query should time out, log error, and state should be reset",
 	run_test_async = function()
 
-		test_utils.setup_mssql_async({query_timeout = 2})
-		local buf, _, qm, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
+		local captured_errors = {}
+		local original_log_error = utils.log_error
 
-		local query = "WAITFOR DELAY '00:00:04' SELECT 1"
-		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
-		mssql.execute_query(buf)
+		local success, err = pcall(function()
+			---@diagnostic disable-next-line: duplicate-set-field
+			utils.log_error = function(msg)
+				table.insert(captured_errors, msg)
+				original_log_error(msg)
+			end
 
-		local state = qm:get_state()
-		local attempts = 0
+			test_utils.setup_mssql_async({query_timeout = 2})
+			local buf, _, qm, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
 
-		while state ~= qm.states.connected and attempts < 50 do
-			test_utils.defer_async(100)
-			state = qm:get_state()
-			attempts = attempts + 1
-		end
+			local query = "WAITFOR DELAY '00:00:04' SELECT 1"
+			vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
+			mssql.execute_query(buf)
 
-		assert(
-			state == qm.states.connected,
-			"Query manager state was not reset. Expected '" .. qm.states.connected .. "' got '" .. state .. "'"
-		)
+			local state
+			local reset_success = test_utils.poll(function()
+				state = qm:get_state()
+				return state == qm.states.connected
+			end)
 
-		-- test regular quick query to ensure connection is still useable
-		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "SELECT 1 AS TestSuccess" })
-		utils.wait_for_schedule_async()
-		mssql.execute_query(buf)
+			assert(
+				reset_success,
+				"Query manager state was not reset. Expected '" .. qm.states.connected .. "' got '" .. state .. "'"
+			)
 
-		local res_buf, _, results = test_utils.res_buf_catcher()
-		assert(
-			results:find("TestSuccess"),
-			"Subsequent query did not return expected results."
-		)
+			local found_msg = vim.iter(captured_errors):any(function(msg)
+				return msg:find("Query execution timed out")
+			end)
+			assert(found_msg, "Did not log 'Query execution timed out'. Captured logs: " .. vim.inspect(captured_errors))
 
-		test_utils.cleanup_results_buffer(res_buf)
+			vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "SELECT 1 as TestSuccess" })
+			utils.wait_for_schedule_async()
+			mssql.execute_query(buf)
+
+			local res_buf, _, results = test_utils.res_buf_catcher({timeout_ms = 10000})
+			assert(results:find("TestSuccess"), "Subsequent query did not return expected results.")
+
+			test_utils.cleanup_results_buffer(res_buf)
+			return cleanup
+		end)
+
+		utils.log_error = original_log_error
 		test_utils.setup_mssql_async({query_timeout = nil})
-		cleanup()
+
+		if success and type(err) == "function" then
+			err()
+		elseif not success then
+			error(err)
+		end
 	end,
 }

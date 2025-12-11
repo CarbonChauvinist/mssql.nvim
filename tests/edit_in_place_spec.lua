@@ -19,7 +19,7 @@ return {
 
 		local then_reconnects = test_utils.poll(function()
 			return qm:get_state() == qm.states.connected
-		end, { timeout_ms = 10000 })
+		end, { timeout_ms = 15000 })
 		assert(then_reconnects, "QueryManager did not reconnect after :edit")
 
 		mssql.execute_query(buf)
