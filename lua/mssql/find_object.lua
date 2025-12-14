@@ -1,5 +1,32 @@
 local utils = require("mssql.utils")
 
+local M = {}
+
+---@class MssqlNode
+---@field nodePath string
+---@field label string
+---@field nodeType string
+---@field objectType string
+---@field parentNodePath string
+---@field isLeaf boolean
+---@field metadata? table
+---@field picker_path? string
+---@field text? string
+
+---@class MssqlSession
+---@field sessionId string
+---@field success boolean
+---@field errorMessage? string
+---@field rootNode MssqlNode
+---@field target_path? string
+
+---@class GlobalCacheEntry
+---@field cache? MssqlNode[]
+---@field cancellation_token? { cancel: boolean }
+---@field refresh_coroutine? thread
+
+---@alias ConnectionKey string
+
 ---Same as utils.wait_for_notification_async but ignores any owner uri
 ---@param client vim.lsp.Client
 ---@param method string
@@ -36,6 +63,9 @@ local wait_for_notification_async = function(client, method, timeout)
 	return coroutine.yield()
 end
 
+---@param client vim.lsp.Client
+---@param connection_options MssqlConnectionOptions
+---@return MssqlSession
 local get_session_async = function(client, connection_options)
 	connection_options = vim.deepcopy(connection_options)
 	connection_options.ServerName = connection_options.server
@@ -78,6 +108,12 @@ end
 		    Alter = 6
 		}
 --]]
+
+---@class NodeTypeDef
+---@field scriptCreateDrop string "ScriptCreate" | "ScriptSelect"
+---@field operation integer
+
+---@type table<string, NodeTypeDef>
 local nodeTypes = {
 	AggregateFunctionPartitionFunction = {
 		scriptCreateDrop = "ScriptCreate",
@@ -107,8 +143,12 @@ local nodeTypes = {
 
 -- SESSION ROUTER
 -- Tracks active callbacks by Session ID so multiple sessions don't clobber each other's handlers
+---@type table<string, function>
 local active_sessions = {}
 
+---@param err lsp.ResponseError?
+---@param result { sessionId: string }?
+---@param ctx table
 local function main_expand_handler(err, result, ctx)
 	if not result or not result.sessionId then return end
 
@@ -118,17 +158,21 @@ local function main_expand_handler(err, result, ctx)
 	end
 end
 
+---@param lsp_client vim.lsp.Client
+---@param connection_options MssqlConnectionOptions
+---@param cancellation_token { cancel: boolean }
+---@return MssqlNode[] | boolean
 local get_object_cache_async = function(lsp_client, connection_options, cancellation_token)
 	utils.wait_for_schedule_async()
 	local session = get_session_async(lsp_client, connection_options)
 	utils.safe_assert(session and session.sessionId)
 
+	---@type string?
 	local session_id = session.sessionId
 	local root_path = session.rootNode.nodePath
 	local cache = {}
 	local expand_count = 0
 	local co = coroutine.running()
-	local expand_complete
 
 	-- State for Phase 1 (Server Root -> Database) traversal
 	local db_node_path = session.target_path or root_path
@@ -137,13 +181,16 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 
 	local clean_up_and_return = function(return_value)
 		-- remove this session from the router
-		active_sessions[session_id] = nil
+		if session_id then
+			active_sessions[session_id] = nil
+		end
 		-- if NO sessions remain unregister the main handler
 		if next(active_sessions) == nil then
 			utils.unregister_lsp_handler(lsp_client, "objectexplorer/expandCompleted", main_expand_handler)
 		end
 
 		-- disconnect (close session on server)
+		---@diagnostic disable-next-line: param-type-mismatch
 		lsp_client:request("objectExplorer/closeSession", {
 			sessionId = session_id,
 		}, function(err, result, _, _)
@@ -164,6 +211,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 				clean_up_and_return(false)
 				return
 			end
+			---@diagnostic disable-next-line: param-type-mismatch
 			lsp_client:request("objectexplorer/expand", {
 				sessionId = session_id,
 				nodePath = path,
@@ -193,7 +241,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 
 			elseif session.target_path and not found_db_node then
 				-- Phase 1: Traversing Server Root to find Database
-				if node.label:lower() == target_database_name:lower() and node.objectType == "Database" then
+				if target_database_name and node.label:lower() == target_database_name:lower() and node.objectType == "Database" then
 					found_db_node = true
 					db_node_path = node.nodePath
 					expand(db_node_path)
@@ -223,7 +271,9 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 	end
 
 	-- Register with the Session Router
-	active_sessions[session_id] = on_expand_result
+	if session_id then
+		active_sessions[session_id] = on_expand_result
+	end
 
 	-- ensure the main handler is registered (safe to call multiple times)
 	utils.register_lsp_handler(lsp_client, "objectexplorer/expandCompleted", main_expand_handler)
@@ -231,6 +281,9 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 	return coroutine.yield()
 end
 
+---@param item MssqlNode
+---@param client vim.lsp.Client
+---@return { script: string, select: boolean }
 local generate_script_async = function(item, client)
 	local scripting_params = {
 		scriptDestination = "ToEditor",
@@ -266,51 +319,8 @@ local generate_script_async = function(item, client)
 end
 
 -- one cache per server and db (ie per connect opts)
+---@type table<ConnectionKey, GlobalCacheEntry>
 local global_cache = {}
-
-local function is_refreshing(connection_options)
-	local key = connection_options
-	if type(key) == "table" then
-		key = vim.json.encode(connection_options)
-	end
-
-	return (
-		global_cache[key]
-		and global_cache[key].refresh_coroutine
-		and type(global_cache[key].refresh_coroutine) == "thread"
-		and coroutine.status(global_cache[key].refresh_coroutine) ~= "dead"
-	)
-end
-
--- Initialises the cache, unless it already exists
--- If force is true, then gets a new cache and overwrites
----@return boolean success
-local initialise_cache_async = function(lsp_client, connection_options, force)
-	local key = vim.json.encode(connection_options)
-	if not global_cache[key] then
-		global_cache[key] = {}
-	end
-
-	-- don't refresh if we are already refreshing or have refreshed previously
-	if (global_cache[key].cache or is_refreshing(key)) and not force then
-		return false
-	end
-
-	-- cancel any currently running
-	if global_cache[key].cancellation_token then
-		global_cache[key].cancellation_token.cancel = true
-	end
-	local cancellation_token = { cancel = false }
-	global_cache[key].cancellation_token = cancellation_token
-
-	global_cache[key].refresh_coroutine = coroutine.running()
-	vim.cmd("redrawstatus")
-	local new_cache = get_object_cache_async(lsp_client, connection_options, cancellation_token)
-	if not cancellation_token.cancel then
-		global_cache[key].cache = new_cache
-	end
-	return true
-end
 
 -- Picker
 local picker_icons = {
@@ -322,6 +332,9 @@ local picker_icons = {
 	View = "󱂬",
 }
 
+---@param cache MssqlNode[]
+---@param title string
+---@return MssqlNode?
 local pick_item_async = function(cache, title)
 	local co = coroutine.running()
 
@@ -365,15 +378,52 @@ local pick_item_async = function(cache, title)
 	return coroutine.yield()
 end
 
-local find_async = function(connection_options, lsp_client)
+-- Initialises the cache, unless it already exists
+-- If force is true, then gets a new cache and overwrites
+---@param lsp_client vim.lsp.Client
+---@param connection_options MssqlConnectionOptions
+---@param force? boolean
+---@return boolean success
+M.initialise_cache_async = function(lsp_client, connection_options, force)
+	local key = vim.json.encode(connection_options) --[[@as ConnectionKey]]
+	if not global_cache[key] then
+		global_cache[key] = {}
+	end
+
+	-- don't refresh if we are already refreshing or have refreshed previously
+	if (global_cache[key].cache or M.is_refreshing(key)) and not force then
+		return false
+	end
+
+	-- cancel any currently running
+	if global_cache[key].cancellation_token then
+		global_cache[key].cancellation_token.cancel = true
+	end
+	local cancellation_token = { cancel = false }
+	global_cache[key].cancellation_token = cancellation_token
+
+	global_cache[key].refresh_coroutine = coroutine.running()
+	vim.cmd("redrawstatus")
+	local new_cache = get_object_cache_async(lsp_client, connection_options, cancellation_token)
+	if not cancellation_token.cancel and type(new_cache) == "table" then
+		global_cache[key].cache = new_cache
+	end
+	return true
+end
+
+---@param connection_options MssqlConnectionOptions
+---@param lsp_client vim.lsp.Client
+---@return { script: string, select: boolean }?
+M.find_async = function(connection_options, lsp_client)
 	local title = "Find"
 	if connection_options and connection_options.database and connection_options.server then
 		title = connection_options.server .. " | " .. connection_options.database
 	end
 	local key = vim.json.encode(connection_options)
+	---@type MssqlNode[]
 	local cache = {}
 	if global_cache[key] and global_cache[key].cache then
-		cache = global_cache[key].cache
+		cache = global_cache[key].cache --[[@as MssqlNode[] ]]
 	end
 
 	local item = pick_item_async(cache, title)
@@ -383,10 +433,12 @@ local find_async = function(connection_options, lsp_client)
 	return generate_script_async(item, lsp_client)
 end
 
-local function delete_unused_cache(in_use_connections)
+---@param in_use_connections MssqlConnectionOptions[]
+M.delete_unused_cache = function(in_use_connections)
 	-- convert to keys first
 	local in_use = {}
 	for _, in_use_connection in ipairs(in_use_connections) do
+		---@type ConnectionKey|MssqlConnectionOptions
 		local key = in_use_connection
 		if type(key) == "table" then
 			key = vim.json.encode(key)
@@ -404,14 +456,25 @@ local function delete_unused_cache(in_use_connections)
 	end
 end
 
-local get_cache = function()
+---@param connection_options MssqlConnectionOptions|string
+---@return boolean?
+M.is_refreshing = function(connection_options)
+	local key = connection_options
+	if type(key) == "table" then
+		key = vim.json.encode(connection_options)
+	end
+
+	return (
+		global_cache[key]
+		and global_cache[key].refresh_coroutine
+		and type(global_cache[key].refresh_coroutine) == "thread"
+		and coroutine.status(global_cache[key].refresh_coroutine) ~= "dead"
+	)
+end
+
+---@return table<string, GlobalCacheEntry>
+M.get_cache = function()
 	return global_cache
 end
 
-return {
-	initialise_cache_async = initialise_cache_async,
-	delete_unused_cache = delete_unused_cache,
-	is_refreshing = is_refreshing,
-	find_async = find_async,
-	get_cache = get_cache
-}
+return M
