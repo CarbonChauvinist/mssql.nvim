@@ -50,12 +50,10 @@ local get_session_async = function(client, connection_options)
 
 	utils.lsp_request_async(client, "objectexplorer/createsession", connection_options)
 	local response, err = wait_for_notification_async(client, "objectexplorer/sessioncreated", 10000)
+
+	-- Detect if we are connected to a Server root (e.g. if we connect to a system database, etc.)
 	if response and response.rootNode and response.rootNode.objectType == "Server" then
-		-- If we connect to a system database then the root node will be the server.
-		-- So we need to set a target path to navigate to first so that we only search the database we connect to
 		response.target_path = response.rootNode.nodePath
-			.. "/Databases/System Databases/"
-			.. connection_options.DatabaseName
 	end
 	utils.safe_assert(not err, vim.inspect(err))
 	return response
@@ -107,6 +105,19 @@ local nodeTypes = {
 	},
 }
 
+-- SESSION ROUTER
+-- Tracks active callbacks by Session ID so multiple sessions don't clobber each other's handlers
+local active_sessions = {}
+
+local function main_expand_handler(err, result, ctx)
+	if not result or not result.sessionId then return end
+
+	local session_callback = active_sessions[result.sessionId]
+	if session_callback then
+		session_callback(err, result, ctx)
+	end
+end
+
 local get_object_cache_async = function(lsp_client, connection_options, cancellation_token)
 	utils.wait_for_schedule_async()
 	local session = get_session_async(lsp_client, connection_options)
@@ -119,15 +130,27 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 	local co = coroutine.running()
 	local expand_complete
 
+	-- State for Phase 1 (Server Root -> Database) traversal
+	local db_node_path = session.target_path or root_path
+	local target_database_name = connection_options.database
+	local found_db_node = false
+
 	local clean_up_and_return = function(return_value)
-		-- disconnect
+		-- remove this session from the router
+		active_sessions[session_id] = nil
+		-- if NO sessions remain unregister the main handler
+		if next(active_sessions) == nil then
+			utils.unregister_lsp_handler(lsp_client, "objectexplorer/expandCompleted", main_expand_handler)
+		end
+
+		-- disconnect (close session on server)
 		lsp_client:request("objectExplorer/closeSession", {
 			sessionId = session_id,
 		}, function(err, result, _, _)
 			session_id = nil
 			return result, err
 		end)
-		utils.unregister_lsp_handler(lsp_client, "objectexplorer/expandCompleted", expand_complete)
+
 		if coroutine.status(co) == "suspended" then
 			coroutine.resume(co, return_value)
 		end
@@ -150,43 +173,60 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 		end)
 	end
 
-	expand_complete = function(_, expand_result, _)
-		if not expand_result then
-			return
-		end
+	local on_expand_result = function(_, expand_result, _)
 		for _, node in ipairs(expand_result.nodes) do
 			if nodeTypes[node.objectType] then
 				local path = node.parentNodePath
-				local root_path_length = #root_path
-				if session.target_path then
-					root_path_length = #session.target_path
+
+				-- Strict scoping: Ignore objects if we haven't confirmed we are in the right DB
+				if not vim.startswith(path, db_node_path) then
+					goto continue
 				end
+
+				local root_path_length = #db_node_path
 				node.picker_path = string.sub(path, root_path_length + 2, #path) .. "/"
 				node.text = node.picker_path .. node.label
 				table.insert(cache, node)
+
 			elseif not node.nodePath then
 				utils.log_info("no node path")
-				utils.log_info(node)
-			elseif session.target_path and vim.startswith(session.target_path, node.nodePath) then
-				-- We are on our way to the target, expand
-				expand(node.nodePath)
-			elseif session.target_path and vim.startswith(node.nodePath, session.target_path) then
-				-- we have hit our target path, expand inside it
-				expand(node.nodePath)
-			elseif not session.target_path then
-				-- We are not in a system database. Expand as usual
-				expand(node.nodePath)
+
+			elseif session.target_path and not found_db_node then
+				-- Phase 1: Traversing Server Root to find Database
+				if node.label:lower() == target_database_name:lower() and node.objectType == "Database" then
+					found_db_node = true
+					db_node_path = node.nodePath
+					expand(db_node_path)
+
+				elseif (node.label:lower() == "databases" or node.label:lower() == "system databases") then
+					expand(node.nodePath)
+				end
+
+			elseif found_db_node or not session.target_path then
+				-- Phase 2: Standard expansion inside the database
+				local current_base = found_db_node and db_node_path or root_path
+				if vim.startswith(node.nodePath, current_base) then
+					expand(node.nodePath)
+				end
 			end
+			::continue::
 		end
 
 		expand_count = expand_count - 1
 		if expand_count == 0 then
-			clean_up_and_return(cache)
+			if not session.target_path or found_db_node then
+				clean_up_and_return(cache)
+			else
+				clean_up_and_return(false)
+			end
 		end
 	end
 
-	utils.register_lsp_handler(lsp_client, "objectexplorer/expandCompleted", expand_complete)
+	-- Register with the Session Router
+	active_sessions[session_id] = on_expand_result
 
+	-- ensure the main handler is registered (safe to call multiple times)
+	utils.register_lsp_handler(lsp_client, "objectexplorer/expandCompleted", main_expand_handler)
 	expand(session.rootNode.nodePath)
 	return coroutine.yield()
 end
