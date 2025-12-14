@@ -593,9 +593,9 @@ end
 ---@return boolean? is_refreshing Returns nil if not connected
 function MssqlQueryManager:is_refreshing()
 	local options = self:get_connection_options()
-	if options then return nil end
+	if not options then return nil end
 
-	return finder.is_refreshing(self.last_connect_params.connection.options)
+	return finder.is_refreshing(options)
 end
 
 --- Handlers (called by LSP callbacks)
