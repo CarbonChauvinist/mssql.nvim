@@ -516,18 +516,21 @@ M.wait_for_cache_content = function(item_label, opts)
 
 	if not success then
 		local debug_dump = {}
-		for i = 1, math.min(20, #cache_info.items) do
-			local item = cache_info.items[i]
-			local type_str = item.objectType or item.nodeType or "?"
-			table.insert(debug_dump, string.format("%s [%s]", item.label, type_str))
-		end
 
 		local msg = {
 			string.format("Timeout waiting for '%s' in cache", item_label),
 			string.format("Type: %s", opts.type or "Any"),
 			string.format("Cache size: %d", cache_info.size),
-			string.format("First %d items: %s", #debug_dump, table.concat(debug_dump, ", "))
 		}
+
+		if opts.debug then
+			for i = 1, math.min(20, #cache_info.items) do
+				local item = cache_info.items[i]
+				local type_str = item.objectType or item.nodeType or "?"
+				table.insert(debug_dump, string.format("%s [%s]", item.label, type_str))
+			end
+			table.insert(msg, string.format("First %d items: %s", #debug_dump, table.concat(debug_dump, ", ")))
+		end
 
 		if #cache_info.seen_types > 0 then
 			table.insert(msg, "Wrong-type matches: " .. table.concat(cache_info.seen_types, ", "))
