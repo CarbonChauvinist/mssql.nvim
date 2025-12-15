@@ -667,7 +667,9 @@ local function insert_query_into_buffer(query)
 	local connect_params = query_manager:get_connect_params()
 	buf = new_query_async()
 	query_manager = query_managers[buf]
-	query_manager:connect_async(connect_params)
+	if connect_params then
+		query_manager:connect_async(connect_params)
+	end
 	vim.api.nvim_buf_set_lines(buf, 0, 0, false, vim.split(query, "\n"))
 	return buf
 end
@@ -1201,6 +1203,7 @@ end
 ---@param opts MssqlConfig? User configuration options
 ---@param callback function? Optional callback to run after setup
 M.setup = function(opts, callback)
+	opts = opts or {}
 	utils.try_resume(coroutine.create(function()
 		setup_async(opts)
 		interface.set_user_commands(M)
