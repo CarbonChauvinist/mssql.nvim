@@ -351,4 +351,63 @@ M.reconnect_session = function(qm, reason, opts)
 	return true
 end
 
+-- Regex magic characters. If found, we treat the string as a Lua pattern.
+-- excludes `.` and `-` as these are common in database names
+-- if user needs to pattern match on either `.` or `-` will need to include
+-- additional targeted magic character to engage pattern detection (e.g '^foo.bar')
+-- to match single character between 'foo' and 'bar'
+local PATTERN_INDICATORS = "[%^%$%(%)%%%[%]%*%+%?]"
+
+---Checks if an item matches a filter entry (literal or pattern).
+---Literal is case-insensitive while pattern is case-sensitive.
+---@param item string
+---@param entry string Literal string or Lua pattern
+---@return boolean is_match
+local function matches_filter(item, entry)
+
+	if entry:match(PATTERN_INDICATORS) then
+		return item:match(entry) ~= nil
+	end
+
+	return item:lower() == entry:lower()
+end
+
+---Filters a list based on allow/deny string literals and/or Lua patterns. Deny takes precedence.
+---@param items string[] List of items to filter
+---@param allow? string[] Allow list. If empty {}, returns empty result.
+---@param deny? string[] Deny list.
+---@return string[] filtered_items
+M.filter_list = function(items, allow, deny)
+	if allow and #allow == 0 then
+		return {}
+	end
+
+	if not allow and (not deny or #deny == 0) then
+		return vim.deepcopy(items)
+	end
+
+	return vim.tbl_filter(function(item)
+		if allow then
+			local allowed = false
+			for _, entry in ipairs(allow) do
+				if matches_filter(item, entry) then
+					allowed = true
+					break
+				end
+			end
+			if not allowed then return false end
+		end
+
+		if deny then
+			for _, entry in ipairs(deny) do
+				if matches_filter(item, entry) then
+					return false
+				end
+			end
+		end
+
+		return true
+	end, items)
+end
+
 return M

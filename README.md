@@ -263,6 +263,8 @@ can also provide these useful properties:
 | ------------------- | ------ | --------------------------------------------------------------------------------- |
 | `promptForDatabase` | `bool` | After connecting to the server, select which database to connect to.              |
 | `promptForPassword` | `bool` | Ask for the password each time you connect instead of storing it in the json file |
+| `databaseAllowList`         | `string[]`| Only show databases matching these strings (case-insensitive) or Lua patterns. |
+| `databaseDenyList`          | `string[]`| Hide databases matching these strings (case-insensitive) or Lua patterns. |
 
 ## Options
 

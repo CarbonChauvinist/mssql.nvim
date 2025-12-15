@@ -533,17 +533,30 @@ local function switch_database_async(bufnr)
 		error("Could not list databases", 0)
 	end
 
-	local db = utils.ui_select_async(result.databaseNames, { prompt = "Choose database" })
-	utils.safe_assert(db, "No database chosen")
 	-- get the connect_params first because they are set to nil when we disconnect
 	local connect_params = qm:get_connect_params()
-
 	if not connect_params then
 		error("Internal Error: Connection parameters are missing despite being in Connected state.", 0)
 	end
 	if not (connect_params.connection and connect_params.connection.options) then
 		error("Internal Error: Connection parameters are malformed.", 0)
 	end
+
+	local db_list = result.databaseNames
+	local conn_options = connect_params.connection.options
+	local allow_list = conn_options and conn_options.databaseAllowList
+	local deny_list = conn_options and conn_options.databaseDenyList
+
+	local db = utils.ui_select_async(
+		utils.filter_list(
+			db_list,
+			allow_list,
+			deny_list
+		)
+		, { prompt = "Choose database" }
+	)
+	utils.safe_assert(db, "No database chosen")
+
 
 	qm:disconnect_async()
 	connect_params.connection.options.database = db
