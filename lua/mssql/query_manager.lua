@@ -576,7 +576,7 @@ function MssqlQueryManager:initialise_cache_async(force)
 	)
 end
 
----@return boolean? success
+---@return { script: string, select: boolean }?
 function MssqlQueryManager:find_async()
 	local options = self:get_connection_options()
 	if not options then

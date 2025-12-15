@@ -736,11 +736,11 @@ local function restore_database_async(query_manager)
 	)[1].DefaultDataPath
 
 	local moves = vim.iter(internal_files)
-		:map(function(file)
+		:map(function(f)
 			return "MOVE N'"
-				.. file.LogicalName
+				.. f.LogicalName
 				.. "' TO N'"
-				.. vim.fs.joinpath(data_path, vim.fs.basename(file.PhysicalName))
+				.. vim.fs.joinpath(data_path, vim.fs.basename(f.PhysicalName))
 				.. "',"
 		end)
 		:join("\n")
@@ -944,6 +944,7 @@ M.refresh_cache = function(bufnr)
 	-- refresh the intellisense cache, fire and forget
 	local success, msg = pcall(function()
 		local client = qm:get_lsp_client()
+		---@diagnostic disable-next-line: param-type-mismatch
 		client:notify("textDocument/rebuildIntelliSense", { ownerUri = utils.lsp_file_uri() })
 	end)
 	if not success then
