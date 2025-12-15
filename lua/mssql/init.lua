@@ -880,7 +880,7 @@ M.switch_database = function(bufnr, callback)
 
 	local query_manager = query_managers[bufnr]
 	if not query_manager then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an exising one.")
+		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
 		return
 	end
 	utils.try_resume(coroutine.create(function()
@@ -973,7 +973,7 @@ M.execute_query = function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 	local qm = query_managers[bufnr]
 	if not qm then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an exising one.")
+		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
 		return
 	end
 	utils.try_resume(coroutine.create(function()
@@ -1146,7 +1146,7 @@ M.find_object = function(bufnr, callback)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 	local query_manager = query_managers[bufnr]
 	if not query_manager then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an exising one.")
+		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
 		return
 	end
 	if query_manager:get_state() ~= query_manager.states.connected then
