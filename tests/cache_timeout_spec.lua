@@ -1,33 +1,41 @@
 local finder = require("mssql.find_object")
-local test_utils = require("tests.utils")
+local state = require("mssql.state")
 
 return {
-	test_name = "Cache initialization should time out gracefully if session creation hangs",
+	test_name = "Cache initialization times out gracefully using real timer",
 	run_test_async = function()
-		local original_defer = vim.defer_fn
-		local expected_timeout = 10000
-		local timeout_triggered = false
-
-		---@diagnostic disable-next-line: duplicate-set-field
-		vim.defer_fn = function(cb, ms)
-			if ms == expected_timeout then
-				timeout_triggered = true
-				original_defer(cb, 0)
-			else
-				original_defer(cb, ms)
-			end
-		end
+		local TEST_TIMEOUT_MS = 50
 
 		local mock_client = {
-			id = 8888,
-			handlers = {},
-			custom_handlers = {},
+			id = 7777,
 			request = function(_, method, _, cb)
-				if method == "objectexplorer/createsession" then
+				-- create session succeeds immediately
+				if method == "objectExplorer/createSession" then
 					vim.schedule(function()
-						cb(nil, { success = true })
+						cb(nil, {
+							sessionId = "sess_timeout_test",
+							success = true,
+							rootNode = {
+								nodePath = "server_root",
+								objectType = "Server",
+								label = "localhost",
+								isLeaf = false,
+								parentNodePath = ""
+							}
+						})
 					end)
 					return true, 1
+				end
+
+				-- expand returns true (request sent) but NEVER calls callback
+				-- simulates the server "hanging" or dropping the request
+				if method == "objectExplorer/expand" then
+					return true, 2
+				end
+
+				if method == "objectExplorer/closeSession" then
+					if cb then cb(nil, {}) end
+					return true, 3
 				end
 			end,
 		}
@@ -37,14 +45,9 @@ return {
 			database = "tempdb"
 		}
 
-		local success, err = pcall(function()
-			-- This internally calls wait_for_notification_async(..., 10000)
-			finder.initialise_cache_async(mock_client, connection_options, true)
-		end)
+		local success = finder.initialise_cache_async(mock_client, connection_options, true, TEST_TIMEOUT_MS)
+		if state._reset_all_state then state._reset_all_state() end
+		assert(success == false, "Function should have returned false (failed) due to timeout.")
 
-		vim.defer_fn = original_defer
-		assert(timeout_triggered, "The timeout timer was not scheduled with expected " .. expected_timeout .. "ms")
-		assert(not success, "initialise_cache_async should have failed due to timeout")
-		assert(tostring(err):find("timed out"), "Error message should mention timeout. Got: " .. tostring(err))
 	end,
 }

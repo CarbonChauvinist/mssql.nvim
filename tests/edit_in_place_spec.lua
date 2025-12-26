@@ -22,9 +22,11 @@ return {
 		end, { timeout_ms = 15000 })
 		assert(then_reconnects, "QueryManager did not reconnect after :edit")
 
+		vim.wait(1000)
 		mssql.execute_query(buf)
 		local res_buf, status, results = test_utils.res_buf_catcher()
-		assert(status and results:find("Merc"), "Query results verification failed after reload.")
+		if not status then error("Results buffer verify failed. Last QM State: " .. tostring(qm:get_state())) end
+		assert(results:find("Merc"), "Query results verification failed after reload. Content: " .. tostring(results))
 
 		test_utils.cleanup_results_buffer(res_buf)
 		cleanup()

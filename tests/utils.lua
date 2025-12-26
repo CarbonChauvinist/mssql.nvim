@@ -274,6 +274,10 @@ M.wait_for_intellisenseReady = function(buf, client, opts)
 	local timeout_ms = opts.timeout_ms or 30000
 	timeout_ms = timeout_ms or 30000
 
+	if require("mssql.state").is_client_ready(client.id) then
+		return true
+	end
+
 	local result, err = utils.wait_for_notification_async(buf, client, "textDocument/intelliSenseReady", timeout_ms)
 	if err then
 		utils.log_error(err.message)
@@ -285,6 +289,30 @@ M.wait_for_intellisenseReady = function(buf, client, opts)
 	end
 
 	return result
+end
+
+--- Waits for QueryManager to report a "connected" state
+---@param bufnr integer
+---param opts? { timeout_ms: integer }
+M.wait_for_connected = function(bufnr, opts)
+	opts = opts or {}
+	local timeout_ms = opts.timeout_ms or 5000
+	local state = require("mssql.state")
+
+	local success = M.poll(function()
+		local qm = state.get_query_manager(bufnr)
+		if not qm then return false end
+		return qm:get_state() == qm.states.connected
+	end, { timeout_ms = timeout_ms, interval_ms = 100 })
+
+	if not success then
+		local qm = state.get_query_manager(bufnr)
+		if not qm then
+			error("Timeout: QueryManager never attached to buffer " .. bufnr)
+		else
+			error("Timeout: QueryManage attached but stuck in state: " .. tostring(qm:get_state()))
+		end
+	end
 end
 
 --- Checks if any string in a list contains a substring pattern.
@@ -436,9 +464,10 @@ M.test_scaffold = function(opts)
 	M.ui_select_fake("TestConnection")
 	mssql.connect(buf)
 	M.wait_for_intellisenseReady(buf, client)
-	-- vim.api.nvim_win_set_buf(0, buf)
+	M.wait_for_connected(buf)
 
-	---@type MssqlQueryManager
+	---@module "query_manager"
+	---@type MssqlQueryManager?
 	local qm = mssql.get_query_manager(buf)
 	if not qm then
 		error("Query manager not found on buffer.")

@@ -1,428 +1,41 @@
-local downloader = require("mssql.tools_downloader")
 local utils = require("mssql.utils")
-local display_query_results = require("mssql.display_query_results")
-local query_manager_module = require("mssql.query_manager")
+local state = require("mssql.state")
+local cmds = require("mssql.commands")
+local ui = require("mssql.ui")
+local lsp = require("mssql.lsp")
 local interface = require("mssql.interface")
 local default_opts = require("mssql.default_opts")
-local finder = require("mssql.find_object")
+local downloader = require("mssql.tools_downloader")
+local display_query_results = require("mssql.display_query_results")
+local autocmds = require("mssql.autocmds")
 
 local joinpath = vim.fs.joinpath
-
 local M = {}
--- Store the latest configuration here so closures always see the current version
-local current_config = {}
-local cleanup_group = vim.api.nvim_create_augroup("MssqlLspCleanup", { clear = true })
 
----@type table<integer, MssqlQueryManager>
-local query_managers = {}
-local attach_handlers = {}
-
--- creates the directory if it doesn't exist
+-- Helper to ensure directory exists
 local function make_directory(path)
 	if vim.fn.isdirectory(path) == 0 then
 		vim.fn.mkdir(path, "p")
 	end
 end
 
-local function read_json_file(path)
-	local file = io.open(path, "r")
-	if not file then
-		return {}
+---@return MssqlConfig? conf
+local function get_config_or_warn()
+	local conf = state.get_config()
+	if not conf then
+		utils.log_error("MSSQL plugin not initialized. Please call require('mssql').setup({}) first.")
+		return nil
 	end
-	local content = file:read("*a")
-	file:close()
-	return vim.json.decode(content)
+	return conf
 end
 
-local function write_json_file(path, table)
-	local file = io.open(path, "w")
-	local text = vim.json.encode(table)
-	if file then
-		file:write(text)
-		file:close()
-	else
-		error("Could not open file: " .. path, 0)
-	end
-end
-
-local function clean_cache()
-	local in_use_connections = {}
-	for _, qm in pairs(query_managers) do
-		if qm:get_state() ~= qm.states.disconnected then
-			table.insert(in_use_connections, qm:get_connect_params().connection.options)
-		end
-	end
-	finder.delete_unused_cache(in_use_connections)
-end
-
-local lsp_name = "mssql_ls"
-local function enable_lsp()
-	local opts = current_config
-	local default_path = joinpath(opts.data_dir, "sqltools/MicrosoftSqlToolsServiceLayer")
-	if jit.os == "Windows" then
-		default_path = default_path .. ".exe"
-	end
-
-	-- sometimes two of these come at once, so hide for 1s
-	local hide_intellisense_ready = false
-
-	local config = {
-		cmd = {
-			opts.tools_file or default_path,
-			"--enable-connection-pooling",
-			"--enable-sql-authentication-provider",
-			"--log-file",
-			joinpath(opts.data_dir, "sqltools.log"),
-			"--application-name",
-			"neovim",
-			"--data-path",
-			joinpath(opts.data_dir, "sql-tools-data"),
-		},
-		filetypes = { "sql" },
-		handlers = {
-			["textDocument/intelliSenseReady"] = function(err, result)
-				if err then
-					utils.log_error("Could not start intellisense: " .. vim.inspect(err))
-				else
-					if not hide_intellisense_ready then
-						hide_intellisense_ready = true
-						utils.log_info("Intellisense ready")
-						vim.defer_fn(function()
-							hide_intellisense_ready = false
-						end, 1000)
-					end
-				end
-				return result, err
-			end,
-
-			["query/message"] = function(_, result)
-				if not (result or result.message or result.message.message) then
-					return
-				end
-
-				opts.view_messages_in(result.message.message, result.message.isError)
-			end,
-			["connection/connectionchanged"] = function(_, result, _)
-				if not result.ownerUri then
-					return
-				end
-				local bufnr = vim.iter(vim.api.nvim_list_bufs()):find(function(buf)
-					return utils.lsp_file_uri(buf) == result.ownerUri
-				end)
-				if not bufnr then
-					return
-				end
-				local qm = query_managers[bufnr]
-				if not (result and result.connection and qm) then
-					return
-				end
-
-				coroutine.resume(coroutine.create(function()
-					qm:connectionchanged_async(result)
-				end))
-
-				clean_cache()
-			end,
-		},
-		on_attach = function(client, bufnr)
-			local qm = query_managers[bufnr]
-
-			if not qm then
-				query_managers[bufnr] = query_manager_module.new(bufnr, client, current_config)
-			else
-				-- existing buffer reloaded (i.e. ':edit')
-				qm.client = client
-
-				local success, err = utils.reconnect_session(qm, "Session reloaded")
-				if not success then utils.log_error(err) end
-			end
-
-			-- see the wait_for_on_attach_async function below
-			if attach_handlers[bufnr] then
-				for _, handler in ipairs(attach_handlers[bufnr]) do
-					handler(client)
-				end
-				attach_handlers[bufnr] = nil
-			end
-
-		  qm = query_managers[bufnr]
-		  if qm then
-			local buffer_uri = utils.lsp_file_uri(bufnr)
-
-			-- define handlers as local variables so we can unregister later
-			-- for query stats (elapsed time, rows affected from SELECT queries)
-			-- avoids conflicts with execute_async when registered this way
-			local on_query_complete = function(_, result, _)
-				if not (result and result.ownerUri and result.ownerUri == buffer_uri) then return end
-
-				qm:handle_query_complete(result)
-			end
-
-			-- DML rows affected query stats
-			local on_query_message = function(_, result, _)
-				if not vim.api.nvim_buf_is_valid(bufnr) then return end
-				if not (result and result.ownerUri and result.ownerUri == buffer_uri) then return end
-
-				qm:handle_query_message(result)
-
-				if result.message and result.message.message then
-					current_config.view_messages_in(result.message.message, result.message.isError)
-				end
-			end
-
-			utils.register_lsp_handler(client, "query/complete", on_query_complete)
-			utils.register_lsp_handler(client, "query/message", on_query_message)
-
-			-- handle cleanup
-			vim.api.nvim_create_autocmd("LspDetach", {
-				buffer = bufnr,
-				group = cleanup_group,
-				callback = function(args)
-					if args.data.client_id == client.id then
-						utils.unregister_lsp_handler(client, "query/complete", on_query_complete)
-						utils.unregister_lsp_handler(client, "query/message", on_query_message)
-					end
-				end
-			})
-		   end
-
-		end,
-	}
-
-	if opts.lsp_settings then
-		config.settings = { mssql = opts.lsp_settings }
-	end
-
-	vim.lsp.config[lsp_name] = config
-	vim.lsp.enable("mssql_ls")
-end
-
----Waits for the lsp attach to the given buffer, with optional timeout.
----Must be run inside a coroutine.
----@param bufnr_to_watch integer
----@param timeout integer
----@return vim.lsp.Client
-local function wait_for_on_attach_async(bufnr_to_watch, timeout)
-	-- if it's already attach, return
-	local existing_client = vim.lsp.get_clients({ name = lsp_name, bufnr = bufnr_to_watch })[1]
-	if existing_client then
-		return existing_client
-	end
-
-	local this = coroutine.running()
-	local resumed = false
-
-	local on_attach_handler = function(client)
-		if not resumed then
-			resumed = true
-			utils.try_resume(this, client)
-		end
-	end
-
-	if not attach_handlers[bufnr_to_watch] then
-		attach_handlers[bufnr_to_watch] = { on_attach_handler }
-	else
-		table.insert(attach_handlers[bufnr_to_watch], on_attach_handler)
-	end
-
-	vim.defer_fn(function()
-		if not resumed then
-			resumed = true
-			utils.log_error("Waiting for the lsp to attach to buffer " .. bufnr_to_watch .. " timed out")
-		end
-	end, timeout)
-
-	return coroutine.yield()
-end
-
-local function set_auto_commands(opts)
-	vim.api.nvim_create_augroup("AutoNameSQL", { clear = true })
-
-	-- Reset the buffer to the file name upon saving
-	vim.api.nvim_create_autocmd("BufWritePost", {
-		group = "AutoNameSQL",
-		pattern = "*.sql",
-		callback = function(args)
-			local buf = args.buf
-			if vim.b[buf].is_temp_name then
-				local written_name = vim.fn.fnamemodify(vim.fn.expand("<afile>"), ":t")
-
-				vim.cmd("file " .. written_name)
-				vim.b[buf].is_temp_name = nil
-			end
-		end,
-	})
-
-
-	if opts.sql_buffer_options and opts.sql_buffer_options ~= {} then
-		vim.api.nvim_create_autocmd("FileType", {
-			group = "AutoNameSQL",
-			pattern = "sql",
-			callback = function()
-				-- copy all properties
-				for k, v in pairs(opts.sql_buffer_options) do
-					vim.bo[k] = v
-				end
-			end,
-		})
-	end
-
-	-- clean the sql object cache on buffer close
-	vim.api.nvim_create_autocmd("BufDelete", {
-		group = "AutoNameSQL",
-		callback = function(args)
-			local buf = args.buf
-
-			if query_managers[buf] then
-				query_managers[buf]:cleanup()
-				query_managers[buf] = nil
-				vim.schedule(function()
-					clean_cache()
-				end)
-			end
-
-			if attach_handlers[buf] then
-				attach_handlers[buf] = nil
-			end
-
-		end,
-	})
-
-	-- auto-reconnect on rename (:saveas)
-	vim.api.nvim_create_autocmd("BufFilePost", {
-		group = "AutoNameSQL",
-		pattern = "*.sql",
-		callback = function(args)
-			local buf = args.buf
-			local qm = query_managers[buf]
-
-			if qm and qm:get_state() == qm.states.connected and current_config.auto_connect_on_rename then
-				local success, err = utils.reconnect_session(qm, "Buffer renamed")
-				if not success then
-					utils.log_error(err)
-				end
-			end
-		end
-	})
-end
-
-local plugin_opts
-
-local mssql_window
-local show_results_buffer_options = {
-	current_window = function(bufnr)
-		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
-		vim.api.nvim_set_current_buf(bufnr)
-	end,
-	split = function(bufnr)
-		local original_window = vim.api.nvim_get_current_win()
-
-		-- open a split if we haven't done already
-		if not (mssql_window and vim.api.nvim_win_is_valid(mssql_window)) then
-			vim.cmd("split")
-			mssql_window = vim.api.nvim_get_current_win()
-		end
-
-		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
-		vim.api.nvim_win_set_buf(mssql_window, bufnr)
-		vim.api.nvim_set_current_win(original_window)
-	end,
-	vsplit = function(bufnr)
-		local original_window = vim.api.nvim_get_current_win()
-
-		-- open a split if we haven't done already
-		if not (mssql_window and vim.api.nvim_win_is_valid(mssql_window)) then
-			vim.cmd("vsplit")
-			mssql_window = vim.api.nvim_get_current_win()
-		end
-
-		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
-		vim.api.nvim_win_set_buf(mssql_window, bufnr)
-		vim.api.nvim_set_current_win(original_window)
-	end,
-}
-
--- If the open_results_in is a string, sets it to the appropriate function
-local function set_show_results_option(opts)
-	if type(opts.open_results_in) == "string" and show_results_buffer_options[opts.open_results_in] then
-		opts.open_results_in = show_results_buffer_options[opts.open_results_in]
-	elseif type(opts.open_results_in) == "function" then
-		return
-	else
-		utils.log_error(
-			vim.inspect(opts.open_results_in)
-				.. " is not a valid option for open_results_in. Must be one of: "
-				.. table.concat(vim.tbl_keys(show_results_buffer_options), ", ")
-				.. ", or a function"
-		)
-	end
-end
-
-local message_buffer
-local message_buffer_error_ns = vim.api.nvim_create_namespace("mssql_error_highlight")
-local clear_message_buffer = function()
-	if message_buffer and vim.api.nvim_buf_is_valid(message_buffer) then
-		vim.api.nvim_set_option_value("modifiable", true, { buf = message_buffer })
-		vim.api.nvim_buf_set_lines(message_buffer, 0, -1, false, {})
-		vim.api.nvim_set_option_value("modifiable", false, { buf = message_buffer })
-	end
-end
-
-local view_message_options = {
-	notification = function(message, is_error)
-		if is_error then
-			utils.log_error(message)
-		else
-			utils.log_info(message)
-		end
-	end,
-	buffer = function(message, is_error)
-		if not (message_buffer and vim.api.nvim_buf_is_valid(message_buffer)) then
-			message_buffer = vim.api.nvim_create_buf(false, false)
-			vim.api.nvim_buf_set_name(message_buffer, "sql messages")
-			vim.api.nvim_set_option_value("buftype", "nofile", { buf = message_buffer })
-			vim.api.nvim_set_option_value("bufhidden", "hide", { buf = message_buffer })
-			vim.api.nvim_set_option_value("swapfile", false, { buf = message_buffer })
-			vim.api.nvim_set_option_value("readonly", true, { buf = message_buffer })
-			vim.api.nvim_set_option_value("modifiable", false, { buf = message_buffer })
-			plugin_opts.open_results_in(message_buffer)
-		end
-		-- Append a line at the end
-		local lines = vim.api.nvim_buf_line_count(message_buffer)
-		vim.api.nvim_set_option_value("modifiable", true, { buf = message_buffer })
-		local message_lines = vim.split(message:gsub("\r", ""), "\n")
-		vim.api.nvim_buf_set_lines(message_buffer, lines, lines, false, message_lines)
-
-		-- Apply the 'Error' highlight group to the line
-		if is_error then
-			vim.api.nvim_buf_set_extmark(message_buffer, message_buffer_error_ns, lines, 0, {
-				end_row = lines + #message_lines,
-				hl_group = "Error",
-			})
-		end
-
-		vim.api.nvim_set_option_value("modifiable", false, { buf = message_buffer })
-	end,
-}
-
--- if the view_messages_in option is a string, sets it to the appropriate function
-local function set_view_message_option(opts)
-	if type(opts.view_messages_in) == "string" and view_message_options[opts.view_messages_in] then
-		opts.view_messages_in = view_message_options[opts.view_messages_in]
-	elseif type(opts.view_messages_in) == "function" then
-		return
-	else
-		utils.log_error(
-			vim.inspect(opts.view_messages_in)
-				.. " is not a valid option for view_messages_in. Must be one of: "
-				.. table.concat(vim.tbl_keys(view_message_options), ", ")
-				.. ", or a function"
-		)
-	end
-end
-
+-- Asynchronous setup logic (downloading tools, etc.)
 local function setup_async(opts)
-	opts = opts or {}
+	opts = vim.tbl_deep_extend("keep", opts or {}, default_opts)
+	state.set_config(opts)
+	ui.set_show_results_option(opts)
+	ui.set_view_message_option(opts)
+
     -- ensure that we use user's custom icons if configured, but validate are only single character
     if opts.icons then
         opts.icons = vim.tbl_deep_extend("force", default_opts.icons, opts.icons)
@@ -432,9 +45,6 @@ local function setup_async(opts)
             end
         end
     end
-	opts = vim.tbl_deep_extend("keep", opts or {}, default_opts)
-	-- Update the module-level config variables
-	current_config = opts
 
 	-- validate max_rows since now used for paginagtion
 	if type(opts.max_rows) ~= "number" or opts.max_rows <= 0 then
@@ -443,10 +53,11 @@ local function setup_async(opts)
 	end
 
 	opts.connections_file = opts.connections_file or joinpath(opts.data_dir, "connections.json")
-	set_show_results_option(opts)
-	set_view_message_option(opts)
-
+	state.set_config(opts)
+	ui.set_show_results_option(opts)
+	ui.set_view_message_option(opts)
 	make_directory(opts.data_dir)
+
 
 	-- if the opts specify a tools file path, don't download.
 	if opts.tools_file then
@@ -457,412 +68,34 @@ local function setup_async(opts)
 		file:close()
 	else
 		local config_file = joinpath(opts.data_dir, "config.json")
-		local config = read_json_file(config_file)
+		local config = utils.read_json_file(config_file)
 		local download_url = downloader.get_tools_download_url()
 
 		-- download if it's a first time setup or the last downloaded is old
-		if not config.last_downloaded_from or config.last_downloaded_from ~= download_url then
+		if config and (not config.last_downloaded_from or config.last_downloaded_from ~= download_url) then
 			downloader.download_tools_async(download_url, opts.data_dir)
 			config.last_downloaded_from = download_url
-			write_json_file(config_file, config)
+			utils.write_json_file(config_file, config)
 		end
 	end
 
-	enable_lsp()
-	set_auto_commands(opts)
-
-	plugin_opts = opts
+	lsp.enable()
+	autocmds.setup(opts)
 end
-
-local edit_connections = function(opts)
-	if vim.fn.filereadable(opts.connections_file) == 0 then
-		utils.log_info("Connections json file not found. Creating...")
-		local default_connections = [=[
-{
-  "Example (edit this)": {
-    "server": "localhost",
-    "database": "master",
-    "authenticationType" : "SqlLogin",
-    "user" : "Admin",
-    "password" : "Your_Password",
-    "trustServerCertificate" : true
-  }
-}
-]=]
-		vim.fn.writefile(vim.split(default_connections, "\n"), opts.connections_file)
-	end
-	vim.cmd.edit(opts.connections_file)
-end
-
-local function get_connections(opts)
-	local f = io.open(opts.connections_file, "r")
-	if not f then
-		return nil
-	end
-
-	local content = f:read("*a")
-	f:close()
-	local ok, json = pcall(vim.fn.json_decode, content)
-	utils.safe_assert(
-		ok and type(json) == "table" and not vim.islist(json),
-		"The connections json file must contain a valid json object"
-	)
-	return json
-end
-
----@overload fun()
----@overload fun(bufnr: integer)
----@param bufnr? integer
-local function switch_database_async(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local qm = query_managers[bufnr]
-	if not qm then
-		error("No mssql lsp is attached. Create a new query or open an existing one.", 0)
-	end
-	if qm:get_state() ~= qm.states.connected then
-		error("You need to connect first", 0)
-	end
-
-	local client = qm:get_lsp_client()
-	local result, err =
-		utils.lsp_request_async(client, "connection/listdatabases", { ownerUri = utils.lsp_file_uri(bufnr) })
-
-	if err then
-		error("Error listing databases: " .. err.message, 0)
-	elseif not (result or result.databaseNames) then
-		error("Could not list databases", 0)
-	end
-
-	-- get the connect_params first because they are set to nil when we disconnect
-	local connect_params = qm:get_connect_params()
-	if not connect_params then
-		error("Internal Error: Connection parameters are missing despite being in Connected state.", 0)
-	end
-	if not (connect_params.connection and connect_params.connection.options) then
-		error("Internal Error: Connection parameters are malformed.", 0)
-	end
-
-	local db_list = result.databaseNames
-	local conn_options = connect_params.connection.options
-	local allow_list = conn_options and conn_options.databaseAllowList
-	local deny_list = conn_options and conn_options.databaseDenyList
-
-	local db = utils.ui_select_async(
-		utils.filter_list(
-			db_list,
-			allow_list,
-			deny_list
-		)
-		, { prompt = "Choose database" }
-	)
-	utils.safe_assert(db, "No database chosen")
-
-
-	qm:disconnect_async()
-	connect_params.connection.options.database = db
-	qm:connect_async(connect_params)
-	utils.log_info("Connected")
-end
-
----@return boolean? success
-local perform_connect_async = function(opts, query_manager)
-	local json = get_connections(opts)
-	if not json then
-		edit_connections(opts)
-		return false
-	end
-
-	local con_name = utils.ui_select_async(vim.tbl_keys(json), { prompt = "Choose connection" })
-	if not con_name then
-		utils.log_info("No connection chosen")
-		return false
-	end
-
-	local con = json[con_name]
-
-	if con.promptForPassword then
-		con.password = vim.fn.inputsecret("password for " .. (con.server or ""))
-	end
-
-	local connectParams = {
-		connection = {
-			options = con,
-		},
-	}
-
-	query_manager:connect_async(connectParams)
-
-	if con.promptForDatabase then
-		switch_database_async()
-	else
-		utils.log_info("Connected")
-	end
-	return true
-end
-
-local function new_query_async()
-	-- The language server requires all files to have a file name.
-	-- Vscode names new files "untitled-1" etc so we'll do the same
-	vim.cmd("enew")
-	local buf = vim.api.nvim_get_current_buf()
-	vim.cmd("file untitled-" .. buf .. ".sql")
-	vim.cmd("setfiletype sql")
-	vim.b[buf].is_temp_name = true
-
-	local client = wait_for_on_attach_async(buf, 10000)
-	return buf, client
-end
-
-local function new_default_query_async(opts)
-	utils.wait_for_schedule_async()
-
-	local connections = get_connections(opts)
-	if not (connections and connections.default) then
-		utils.log_info("Add a connection called 'default'")
-		edit_connections(opts)
-		return
-	end
-	local connection = connections.default
-
-	local buf = new_query_async()
-	local query_manager = query_managers[buf]
-	if not query_manager then
-		error("CRITICAL: Lsp attached without query manager")
-	end
-
-	if connection.promptForPassword then
-		connection.password = vim.fn.inputsecret("password for " .. (connection.server or ""))
-	end
-
-	local connectParams = {
-		connection = {
-			options = connection,
-		},
-	}
-
-	query_manager:connect_async(connectParams)
-
-	if connection.promptForDatabase then
-		switch_database_async(buf)
-	else
-		utils.log_info("Connected")
-	end
-	query_manager:initialise_cache_async()
-end
-
---- If the current buffer is empty, put the query into this buffer. Otherwise,
---- Open a new buffer with the same connection and put the query there
-local function insert_query_into_buffer(query)
-	local buf = vim.api.nvim_get_current_buf()
-	if vim.trim(table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false))) == "" then
-		vim.api.nvim_buf_set_lines(buf, 0, 0, false, vim.split(query, "\n"))
-		return 0
-	end
-
-	local query_manager = query_managers[buf]
-	if not query_manager then
-		error("Connect to a database first", 0)
-	end
-
-	local connect_params = query_manager:get_connect_params()
-	buf = new_query_async()
-	query_manager = query_managers[buf]
-	if connect_params then
-		query_manager:connect_async(connect_params)
-	end
-	vim.api.nvim_buf_set_lines(buf, 0, 0, false, vim.split(query, "\n"))
-	return buf
-end
-
-local function backup_database_async(query_manager)
-	if query_manager:get_state() ~= query_manager.states.connected then
-		error("Connect to a database first", 0)
-	end
-	local connect_params = query_manager:get_connect_params()
-	if
-		not (
-			connect_params
-			and connect_params.connection
-			and connect_params.connection.options
-			and connect_params.connection.options.database
-		)
-	then
-		error("No connection found", 0)
-	end
-	local database = connect_params.connection.options.database
-	local dir = vim.fs.joinpath(vim.fn.getcwd(), database .. ".bak")
-	local query = string.format(
-		[[BACKUP DATABASE [%s]
--- Change to your backup location
-TO DISK = N'%s'
-WITH
-INIT, -- Remove if not overwriting
-STATS = 25]],
-		database,
-		dir
-	)
-
-	insert_query_into_buffer(query)
-end
-
-local function restore_database_async(query_manager)
-	if query_manager:get_state() ~= query_manager.states.connected then
-		error("Connect to a server first", 0)
-	end
-
-	local file = vim.fn.input("Enter .bak file path:", "", "file")
-	if not file or file == "" then
-		error("No file chosen", 0)
-	end
-
-	local internal_files =
-		utils.get_query_result_async(query_manager:execute_async("RESTORE FILELISTONLY FROM DISK = '" .. file .. "'"))
-
-	local headers =
-		utils.get_query_result_async(query_manager:execute_async("RESTORE HEADERONLY FROM DISK = '" .. file .. "'"))[1]
-
-	local database = headers.DatabaseName
-
-	local size = tonumber(headers.BackupSize)
-	local stats = 25
-	if size <= 2000000000 then -- <= 2GB
-		stats = 25
-	else
-		stats = 10
-	end
-
-	local data_path = utils.get_query_result_async(
-		query_manager:execute_async("SELECT SERVERPROPERTY('InstanceDefaultDataPath') AS DefaultDataPath")
-	)[1].DefaultDataPath
-
-	local moves = vim.iter(internal_files)
-		:map(function(f)
-			return "MOVE N'"
-				.. f.LogicalName
-				.. "' TO N'"
-				.. vim.fs.joinpath(data_path, vim.fs.basename(f.PhysicalName))
-				.. "',"
-		end)
-		:join("\n")
-
-	local query = string.format(
-		[[-- WARNING: Read and understand this before executing!
-USE [master]
-ALTER DATABASE [%s] SET SINGLE_USER WITH ROLLBACK IMMEDIATE -- drop connections
-RESTORE DATABASE [%s] FROM  DISK = N'%s' WITH
-FILE = 1,
-%s
-REPLACE, -- overwrite existing
-STATS = %s
-ALTER DATABASE [%s] SET MULTI_USER]],
-		database,
-		database,
-		file,
-		moves,
-		stats,
-		database
-	)
-
-	insert_query_into_buffer(query)
-end
-
-local function connect_to_default(query_manager, opts)
-	utils.wait_for_schedule_async()
-
-	local connections = get_connections(opts)
-	if not (connections and connections.default) then
-		utils.log_info("Add a connection called 'default'")
-		edit_connections(opts)
-		return
-	end
-
-	local connection = connections.default
-
-	if connection.promptForPassword then
-		connection.password = vim.fn.inputsecret("password for " .. (connection.server or ""))
-	end
-
-	local connectParams = {
-		connection = {
-			options = connection,
-		},
-	}
-
-	query_manager:connect_async(connectParams)
-
-	if connection.promptForDatabase then
-		switch_database_async()
-	else
-		utils.log_info("Connected")
-	end
-end
-
-local function save_query_results_async(result_info)
-	utils.wait_for_schedule_async()
-	local success, lsp_client = pcall(utils.get_lsp_client, result_info.ownerUri)
-	if not success then
-		error("The buffer with the sql query has been closed, can't save query results")
-	end
-
-	local file = vim.fn.input("Save query results (.csv/.json/.xls/.xlsx/.xml)", "", "file")
-	if not file or file == "" then
-		utils.log_error("No file path given")
-		return
-	end
-
-	local params = {
-		FilePath = file,
-		BatchIndex = result_info.batchIndex,
-		ResultSetIndex = result_info.resultSetIndex,
-		OwnerUri = result_info.ownerUri,
-		IncludeHeaders = true,
-		Formatted = true,
-	}
-
-	local method
-	local openAfterSave = true
-	if file:match("%.csv$") then
-		method = "query/saveCsv"
-	elseif file:match("%.json$") then
-		method = "query/saveJson"
-	elseif file:match("%.xml$") then
-		method = "query/saveXml"
-	elseif file:match("%.xlsx?$") then
-		method = "query/saveExcel"
-		openAfterSave = false
-	else
-		utils.log_error("File extension not recognised. Enter a file with extension .csv/.json/.xls/.xlsx/.xml")
-		return
-	end
-
-	local _, err = utils.lsp_request_async(lsp_client, method, params)
-
-	if err then
-		utils.log_error("Error saving query results")
-		utils.log_error(vim.inspect(err))
-		return
-	end
-
-	utils.log_info("File saved")
-
-	if openAfterSave then
-		vim.cmd("edit " .. file)
-	end
-end
-
-local show_caching_in_status_line = false
 
 M.new_query = function()
 	utils.try_resume(coroutine.create(function()
-		new_query_async()
+		ui.new_query_async()
 	end))
 end
 
 -- Look for the connection called "default", prompt to choose a database in that server,
 -- connect to that database and open a new buffer for querying (very useful!)
 M.new_default_query = function()
+	local curr_conf = get_config_or_warn()
+	if not curr_conf then return end
 	utils.try_resume(coroutine.create(function()
-		new_default_query_async(plugin_opts)
+		cmds.new_default_query_async(curr_conf)
 	end))
 end
 
@@ -880,18 +113,17 @@ M.switch_database = function(bufnr, callback)
 	end
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 
-	local query_manager = query_managers[bufnr]
-	if not query_manager then
+	local qm = state.get_query_manager(bufnr)
+	if not qm then
 		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
 		return
 	end
+
 	utils.try_resume(coroutine.create(function()
-		switch_database_async(bufnr)
-		query_manager:initialise_cache_async()
-		clean_cache()
-		if callback then
-			callback()
-		end
+		cmds.switch_database_async(bufnr)
+		qm:initialise_cache_async()
+		autocmds.clean_cache()
+		if callback then callback() end
 	end))
 end
 
@@ -901,20 +133,27 @@ end
 ---@param bufnr? integer
 M.connect = function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local query_manager = query_managers[bufnr]
-	if not query_manager then
+
+	local qm = state.get_query_manager(bufnr)
+	local curr_conf = get_config_or_warn()
+	if not curr_conf then return end
+
+	if not qm then
 		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
 		return
 	end
+
 	utils.try_resume(coroutine.create(function()
-		if perform_connect_async(plugin_opts, query_manager) then
-			query_manager:initialise_cache_async()
+		if cmds.perform_connect_async(curr_conf, qm, bufnr) then
+			qm:initialise_cache_async()
 		end
 	end))
 end
 
 M.edit_connections = function()
-	edit_connections(plugin_opts)
+	local curr_conn = get_config_or_warn()
+	if not curr_conn then return end
+	utils.edit_connections(curr_conn)
 end
 
 --- Rebuilds the sql object and intellisense cache
@@ -923,7 +162,7 @@ end
 ---@param bufnr? integer
 M.refresh_cache = function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local qm = query_managers[bufnr]
+	local qm = state.get_query_manager(bufnr)
 	if not qm then
 		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
 		return
@@ -933,11 +172,12 @@ M.refresh_cache = function(bufnr)
 		return
 	end
 	-- refresh the object cache, fire and forget
-	show_caching_in_status_line = true
+	ui.set_caching_status(true)
+	vim.cmd("redrawstatus")
 
 	coroutine.resume(coroutine.create(function()
 		qm:initialise_cache_async(true)
-		show_caching_in_status_line = false
+		ui.set_caching_status(false)
 		vim.cmd("redrawstatus")
 	end))
 
@@ -947,9 +187,7 @@ M.refresh_cache = function(bufnr)
 		---@diagnostic disable-next-line: param-type-mismatch
 		client:notify("textDocument/rebuildIntelliSense", { ownerUri = utils.lsp_file_uri() })
 	end)
-	if not success then
-		utils.log_error(msg)
-	end
+	if not success then utils.log_error(msg) end
 	utils.log_info("Refreshing cache...")
 end
 
@@ -958,14 +196,15 @@ end
 ---@param bufnr? integer
 M.disconnect = function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local query_manager = query_managers[bufnr]
-	if not query_manager then
+	local qm = state.get_query_manager(bufnr)
+	if not qm then
 		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
 		return
 	end
+
 	utils.try_resume(coroutine.create(function()
-		query_manager:disconnect_async()
-		clean_cache()
+		qm:disconnect_async()
+		autocmds.clean_cache()
 	end))
 end
 
@@ -974,20 +213,25 @@ end
 ---@param bufnr? integer
 M.execute_query = function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local qm = query_managers[bufnr]
+	local qm = state.get_query_manager(bufnr)
 	if not qm then
 		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
 		return
 	end
+
 	utils.try_resume(coroutine.create(function()
 		local query = utils.get_selected_text()
+		local curr_conf = get_config_or_warn()
+		if not curr_conf then return end
 		if qm:get_state() == qm.states.disconnected then
-			connect_to_default(qm, plugin_opts)
+			utils.log_error("Please connect first.")
+			return
 		end
-		clear_message_buffer()
+
+		ui.clear_message_buffer()
 		local result = qm:execute_async(query)
 		if result then -- since cancelled query returns nil, have to check for nil before displaying
-			display_query_results.display_query_results(plugin_opts, result)
+			display_query_results.display_query_results(curr_conf, result)
 		end
 	end))
 end
@@ -997,126 +241,34 @@ end
 ---@param bufnr? integer
 M.cancel_query = function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local query_manager = query_managers[bufnr]
-	if not query_manager then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
-		return
+	local qm = state.get_query_manager(bufnr)
+	if qm then
+		utils.try_resume(coroutine.create(function()
+			qm:cancel_async()
+		end))
 	end
-	utils.try_resume(coroutine.create(function()
-		query_manager:cancel_async()
-	end))
 end
 
-M.lualine_component = {
-	---@param bufnr? integer
-	function(bufnr)
-		if type(bufnr) ~= "number" then
-			bufnr = vim.api.nvim_get_current_buf()
-		end
-		if not vim.api.nvim_buf_is_valid(bufnr) then
-			return ""
-		end
-		local qm = query_managers[bufnr]
-		local qri = vim.b[bufnr].query_result_info
 
-		if qri then
-			return display_query_results.get_pagination_status(bufnr)
-		elseif not qm then
-			return
-		end
-
-		local state = qm:get_state()
-
-		if state == qm.states.disconnected then
-			local disconnected_icon = plugin_opts.icons.enabled and plugin_opts.icons.disconnected .. " " or ""
-			return disconnected_icon .. "Connect to MSSQL"
-		elseif state == qm.states.connecting then
-			return "Connecting..."
-		end
-
-		local status_parts = {}
-		local exec_info = qm:last_execution()
-		local connect_params = qm:get_connect_params()
-
-		local server_db_string = ""
-		if connect_params and connect_params.connection and connect_params.connection.options then
-			local server = connect_params.connection.options.server
-			local db = connect_params.connection.options.database
-			if db and server then
-				local db_icon, server_icon = "", ""
-				if plugin_opts.icons.enabled then
-					server_icon = plugin_opts.icons.server .. " "
-					db_icon = " " .. plugin_opts.icons.database .. " "
-					server_db_string = server_icon .. server .. db_icon .. db
-				else
-					server_db_string = server .. " | " .. db
-				end
-			end
-		end
-
-		if state == qm.states.executing then
-			table.insert(status_parts, server_db_string)
-			table.insert(status_parts, "Executing...")
-			if exec_info.elapsed_time then
-				table.insert(status_parts, utils.format_elapsed_time_to_string(exec_info.elapsed_time, false))
-			end
-		else -- Connected state (after completion, cancellation, or idle)
-			if exec_info.rows_affected ~= nil then
-				local rows_text = exec_info.rows_affected == 1 and "row" or "rows"
-				table.insert(status_parts, string.format("%d %s affected", exec_info.rows_affected, rows_text))
-			end
-			if exec_info.elapsed_time and exec_info.elapsed_time > 0 then
-				table.insert(status_parts, utils.format_elapsed_time_to_string(exec_info.elapsed_time, true))
-			end
-			table.insert(status_parts, server_db_string)
-		end
-
-		if show_caching_in_status_line and qm:is_refreshing() then
-			table.insert(status_parts, "(Caching database objects...)")
-		end
-
-		return table.concat(status_parts, "  ")
-	end,
-	---@param bufnr? integer
-	cond = function(bufnr)
-		if type(bufnr) ~= "number" then
-			bufnr = vim.api.nvim_get_current_buf()
-		end
-		if not vim.api.nvim_buf_is_valid(bufnr) then
-			return false
-		end
-		local qm = query_managers[bufnr]
-		return qm ~= nil or vim.b[bufnr].query_result_info ~= nil
-	end,
-}
-
----@overload fun()
----@overload fun(bufnr: integer)
----@param bufnr? integer
 M.backup_database = function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local query_manager = query_managers[bufnr]
-	if not query_manager then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
-		return
-	end
+	local qm = state.get_query_manager(bufnr)
+	if not qm then return end
 	utils.try_resume(coroutine.create(function()
-		backup_database_async(query_manager)
+		cmds.backup_database_async(qm)
 	end))
 end
+
 
 ---@overload fun()
 ---@overload fun(bufnr: integer)
 ---@param bufnr? integer
 M.restore_database = function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local query_manager = query_managers[bufnr]
-	if not query_manager then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
-		return
-	end
+	local qm = state.get_query_manager(bufnr)
+	if not qm then return end
 	utils.try_resume(coroutine.create(function()
-		restore_database_async(query_manager)
+		cmds.restore_database_async(qm)
 	end))
 end
 
@@ -1131,7 +283,7 @@ M.save_query_results = function(bufnr)
 		return
 	end
 	utils.try_resume(coroutine.create(function()
-		save_query_results_async(result_info)
+		cmds.save_query_results_async(result_info)
 	end))
 end
 
@@ -1147,54 +299,46 @@ M.find_object = function(bufnr, callback)
 		bufnr = nil
 	end
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local query_manager = query_managers[bufnr]
-	if not query_manager then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
-		return
-	end
-	if query_manager:get_state() ~= query_manager.states.connected then
-		utils.log_error("You are currently " .. query_manager:get_state())
+	local qm = state.get_query_manager(bufnr)
+	if not qm then return end
+
+	if qm:get_state() ~= qm.states.connected then
+		utils.log_error("You are currently " .. qm:get_state())
 		return
 	end
 
-	if query_manager:is_refreshing() then
-		show_caching_in_status_line = true
+	if qm:is_refreshing() then
+		ui.set_caching_status(true)
 		vim.cmd("redrawstatus")
 		utils.log_error("Still caching. Try again in a few seconds...")
 		return
 	end
 
-	show_caching_in_status_line = false
+	ui.set_caching_status(false)
 	vim.cmd("redrawstatus")
+	local curr_conf = get_config_or_warn()
+	if not curr_conf then return end
 
 	utils.try_resume(coroutine.create(function()
-		local item = query_manager:find_async()
-		if not item then
-			return
-		end
+		local item = qm:find_async()
+		if not item then return end
 
-		local buf = insert_query_into_buffer(item.script)
+		local buf = ui.insert_query_into_buffer(item.script)
+		if buf == 0 then buf = vim.api.nvim_get_current_buf() end
 
-		if buf == 0 then
-			buf = vim.api.nvim_get_current_buf()
-		end
-		query_manager = query_managers[buf]
+		qm = state.get_query_manager(buf)
+		if not qm then return end
 
-		if not query_manager then
-			utils.log_error("Could not find query manager for buffer " .. buf)
-			return
+		if curr_conf.execute_generated_select_statements and item.select then
+			ui.clear_message_buffer()
+			local result = qm:execute_async(item.script)
+			display_query_results.display_query_results(curr_conf, result)
 		end
-
-		if plugin_opts.execute_generated_select_statements and item.select then
-			clear_message_buffer()
-			local result = query_manager:execute_async(item.script)
-			display_query_results.display_query_results(plugin_opts, result)
-		end
-		if callback then
-			callback()
-		end
+		if callback then callback() end
 	end))
 end
+
+M.lualine_component = ui.lualine_component
 
 M.set_keymaps = function(prefix)
 	interface.set_keymaps(prefix, M)
@@ -1209,18 +353,10 @@ M.setup = function(opts, callback)
 		setup_async(opts)
 		interface.set_user_commands(M)
 		interface.set_keymaps(opts.keymap_prefix, M)
-		if callback ~= nil then
-			callback()
-		end
+		if callback ~= nil then callback() end
 	end))
 end
 
----@overload fun()
----@overload fun(bufnr: integer)
----@param bufnr? integer
-M.get_query_manager = function(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	return query_managers[bufnr]
-end
+M.get_query_manager = state.get_query_manager
 
 return M

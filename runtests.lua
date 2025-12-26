@@ -103,6 +103,8 @@ local function run_suite()
 				end
 			end
 
+			require("mssql.state")._reset_all_state()
+			require("mssql.find_object").reset_all_state()
 			collectgarbage("collect")
 			local co = coroutine.running()
 			vim.defer_fn(function() coroutine.resume(co) end, 20)

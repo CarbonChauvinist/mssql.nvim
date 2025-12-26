@@ -14,6 +14,9 @@ return {
 
 		test_utils.wait_for_intellisenseReady(buf, client)
 		local qm = mssql.get_query_manager(buf)
+		if not qm then
+			error("No query manager to test")
+		end
 		assert(qm:get_state() == qm.states.connected, "State should be Connected")
 		cleanup()
 	end,

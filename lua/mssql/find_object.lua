@@ -1,4 +1,5 @@
 local utils = require("mssql.utils")
+local state = require("mssql.state")
 
 local M = {}
 
@@ -27,46 +28,15 @@ local M = {}
 
 ---@alias ConnectionKey string
 
----Same as utils.wait_for_notification_async but ignores any owner uri
----@param client vim.lsp.Client
----@param method string
----@param timeout integer
----@return any result
----@return lsp.ResponseError? error
-local wait_for_notification_async = function(client, method, timeout)
-	local this = coroutine.running()
-	local resumed = false
-	local handler
-	handler = function(err, result, _)
-		if not resumed then
-			resumed = true
-			utils.unregister_lsp_handler(client, method, handler)
-			utils.try_resume(this, result, err)
-		end
-		return result, err
-	end
-	utils.register_lsp_handler(client, method, handler)
-	vim.defer_fn(function()
-		if not resumed then
-			resumed = true
-			utils.unregister_lsp_handler(client, method, handler)
-			utils.try_resume(
-				this,
-				nil,
-				vim.lsp.rpc_response_error(
-					vim.lsp.protocol.ErrorCodes.UnknownErrorCode,
-					"Waiting for the lsp to call " .. method .. "timed out"
-				)
-			)
-		end
-	end, timeout)
-	return coroutine.yield()
-end
-
 ---@param client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
----@return MssqlSession
-local get_session_async = function(client, connection_options)
+---@param timeout_ms? integer Optional timeout in milliseconds (default: 10000)
+---@return MssqlSession? | boolean?
+---@return string? msg
+local get_session_async = function(client, connection_options, timeout_ms)
+	if type(timeout_ms) ~= "number" or timeout_ms <= 0 then
+		timeout_ms = 10000
+	end
 	connection_options = vim.deepcopy(connection_options)
 	connection_options.ServerName = connection_options.server
 	connection_options.DatabaseName = connection_options.database
@@ -78,15 +48,65 @@ local get_session_async = function(client, connection_options)
 	-- https://github.com/microsoft/sqltoolsservice/blob/49036c6196e73c3791bca5d31e97a16afee00772/src/Microsoft.SqlTools.ServiceLayer/ObjectExplorer/ObjectExplorerService.cs#L537
 	connection_options.DatabaseDisplayName = connection_options.DatabaseDisplayName or connection_options.database
 
-	utils.lsp_request_async(client, "objectexplorer/createsession", connection_options)
-	local response, err = wait_for_notification_async(client, "objectexplorer/sessioncreated", 10000)
+	local co = coroutine.running()
+	local resumed = false
+	local timeout_timer
 
-	-- Detect if we are connected to a Server root (e.g. if we connect to a system database, etc.)
-	if response and response.rootNode and response.rootNode.objectType == "Server" then
-		response.target_path = response.rootNode.nodePath
+	-- setup event listener
+	local dispose = state.on_event("objectexplorer/sessioncreated", function(err, result, ctx)
+		if ctx and ctx.client_id == client.id then
+			if not resumed and result and result.rootNode then
+				resumed = true
+				utils.try_resume(co, result, err)
+			end
+		end
+	end)
+
+	-- send request
+	---@diagnostic disable-next-line: param-type-mismatch
+	client:request("objectexplorer/createsession", connection_options, function(err, result)
+		if err then
+			if not resumed then
+				resumed = true
+				if dispose then dispose() end
+				if timeout_timer then timeout_timer:close() end
+				utils.try_resume(co, nil, err)
+			end
+			return
+		end
+
+		if result and result.rootNode then
+			if not resumed then
+				resumed = true
+				if dispose then dispose() end
+				if timeout_timer then timeout_timer:close() end
+				utils.try_resume(co, result, nil)
+			end
+		end
+	end)
+
+	timeout_timer = vim.defer_fn(function()
+		if not resumed then
+			resumed = true
+			if dispose then dispose() end
+			utils.try_resume(co, nil, "Timeout waiting for session created")
+		end
+	end, timeout_ms)
+
+	local result, err = coroutine.yield()
+
+	if err then return nil, err end
+
+	if not (result and result.rootNode) then
+		utils.log_error("Session created but missing rootNode. Result: " .. vim.inspect(result))
+		return nil
 	end
-	utils.safe_assert(not err, vim.inspect(err))
-	return response
+
+	if result.rootNode and result.rootNode.objectType == "Server" then
+		result.target_path = result.rootNode.nodePath
+	end
+
+	return result
 end
 
 --[[
@@ -158,127 +178,190 @@ local function main_expand_handler(err, result, ctx)
 	end
 end
 
+state.on_event("objectexplorer/expandCompleted", main_expand_handler)
+
 ---@param lsp_client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
 ---@param cancellation_token { cancel: boolean }
----@return MssqlNode[] | boolean
-local get_object_cache_async = function(lsp_client, connection_options, cancellation_token)
-	utils.wait_for_schedule_async()
-	local session = get_session_async(lsp_client, connection_options)
-	utils.safe_assert(session and session.sessionId)
+---@param timeout_ms? integer Optional timeout in milliseconds (default: 10000)
+---@return MssqlNode[] | boolean? result Returns false or nil on failure/timeout
+---@return string? msg
+local get_object_cache_async = function(lsp_client, connection_options, cancellation_token, timeout_ms)
+    utils.wait_for_schedule_async()
+    if type(timeout_ms) ~= "number" or timeout_ms <= 0 then
+        timeout_ms = 10000
+    end
+	local start_time = vim.uv.hrtime()
+    local session, err = get_session_async(lsp_client, connection_options, timeout_ms)
 
-	---@type string?
-	local session_id = session.sessionId
-	local root_path = session.rootNode.nodePath
-	local cache = {}
-	local expand_count = 0
-	local co = coroutine.running()
+    if not session or not session.sessionId or not session.rootNode then
+        return nil, err or "Session creation failed or returned invalid data (missing rootNode)"
+    end
+    ---@cast session -nil
 
-	-- State for Phase 1 (Server Root -> Database) traversal
-	local db_node_path = session.target_path or root_path
-	local target_database_name = connection_options.database
-	local found_db_node = false
+	local elapsed_ns = vim.uv.hrtime() - start_time
+	local elapsed_ms = elapsed_ns / 1000000
+	local remaining_ms = timeout_ms - elapsed_ms
 
-	local clean_up_and_return = function(return_value)
-		-- remove this session from the router
-		if session_id then
-			active_sessions[session_id] = nil
-		end
-		-- if NO sessions remain unregister the main handler
-		if next(active_sessions) == nil then
-			utils.unregister_lsp_handler(lsp_client, "objectexplorer/expandCompleted", main_expand_handler)
-		end
-
-		-- disconnect (close session on server)
-		---@diagnostic disable-next-line: param-type-mismatch
-		lsp_client:request("objectExplorer/closeSession", {
-			sessionId = session_id,
-		}, function(err, result, _, _)
-			session_id = nil
-			return result, err
-		end)
-
-		if coroutine.status(co) == "suspended" then
-			coroutine.resume(co, return_value)
-		end
+	if remaining_ms <= 0 then
+		return nil, "Operation timed out after session creation"
 	end
 
-	local expand = function(path)
-		expand_count = expand_count + 1
-		vim.schedule(function()
-			-- check for cancellation every time we expand a node in the tree
-			if cancellation_token.cancel then
-				clean_up_and_return(false)
-				return
-			end
-			---@diagnostic disable-next-line: param-type-mismatch
-			lsp_client:request("objectexplorer/expand", {
-				sessionId = session_id,
-				nodePath = path,
-			}, function(err, result, _, _)
-				return result, err
-			end)
-		end)
-	end
+    ---@type string?
+    local session_id = session.sessionId
+    local root_path = session.rootNode.nodePath
+    local cache = {}
+    local expand_count = 0
+    local co = coroutine.running()
+	local timeout_timer
 
-	local on_expand_result = function(_, expand_result, _)
-		for _, node in ipairs(expand_result.nodes) do
-			if nodeTypes[node.objectType] then
-				local path = node.parentNodePath
+    -- (Server Root -> Database) traversal
+    local db_node_path = session.target_path or root_path
+    local target_database_name = connection_options.database
+    local found_db_node = false
+	local expand
 
-				-- Strict scoping: Ignore objects if we haven't confirmed we are in the right DB
-				if not vim.startswith(path, db_node_path) then
-					goto continue
-				end
-
-				local root_path_length = #db_node_path
-				node.picker_path = string.sub(path, root_path_length + 2, #path) .. "/"
-				node.text = node.picker_path .. node.label
-				table.insert(cache, node)
-
-			elseif not node.nodePath then
-				utils.log_info("no node path")
-
-			elseif session.target_path and not found_db_node then
-				-- Phase 1: Traversing Server Root to find Database
-				if target_database_name and node.label:lower() == target_database_name:lower() and node.objectType == "Database" then
-					found_db_node = true
-					db_node_path = node.nodePath
-					expand(db_node_path)
-
-				elseif (node.label:lower() == "databases" or node.label:lower() == "system databases") then
-					expand(node.nodePath)
-				end
-
-			elseif found_db_node or not session.target_path then
-				-- Phase 2: Standard expansion inside the database
-				local current_base = found_db_node and db_node_path or root_path
-				if vim.startswith(node.nodePath, current_base) then
-					expand(node.nodePath)
-				end
-			end
-			::continue::
-		end
-
-		expand_count = expand_count - 1
-		if expand_count == 0 then
-			if not session.target_path or found_db_node then
-				clean_up_and_return(cache)
-			else
-				clean_up_and_return(false)
+    local clean_up_and_return = function(return_value, cleanup_err)
+		if timeout_timer then
+			local timer_to_close = timeout_timer
+			timeout_timer = nil
+			if not timer_to_close:is_closing() then
+				timer_to_close:close()
 			end
 		end
-	end
 
-	-- Register with the Session Router
-	if session_id then
-		active_sessions[session_id] = on_expand_result
-	end
+        if session_id then
+				active_sessions[session_id] = nil
+        end
 
-	-- ensure the main handler is registered (safe to call multiple times)
-	utils.register_lsp_handler(lsp_client, "objectexplorer/expandCompleted", main_expand_handler)
-	expand(session.rootNode.nodePath)
-	return coroutine.yield()
+        ---@diagnostic disable-next-line: param-type-mismatch
+        lsp_client:request("objectexplorer/closeSession", {
+            sessionId = session_id,
+        }, function(close_err, result, _, _)
+            session_id = nil
+            return result, close_err
+        end)
+
+        if coroutine.status(co) == "suspended" then
+            if cleanup_err then
+                local ok, resume_err = coroutine.resume(co, nil, cleanup_err)
+                if not ok then
+                    utils.log_error("Failed to resume coroutine: " .. tostring(resume_err))
+                end
+            else
+                coroutine.resume(co, return_value)
+            end
+        end
+    end
+
+    local on_expand_result = function(_, expand_result, _)
+		-- ignore boolean acks or empty results
+		if type(expand_result) ~= "table" or not expand_result.nodes then
+			return
+		end
+
+        for _, node in ipairs(expand_result.nodes) do
+            if nodeTypes[node.objectType] then
+                local path = node.parentNodePath
+
+                if not vim.startswith(path, db_node_path) then
+                    goto continue
+                end
+
+                local root_path_length = #db_node_path
+                node.picker_path = string.sub(path, root_path_length + 2, #path) .. "/"
+                node.text = node.picker_path .. node.label
+                table.insert(cache, node)
+
+            elseif not node.nodePath then
+                utils.log_info("no node path")
+            elseif session.target_path and not found_db_node then
+                if target_database_name and node.label:lower() == target_database_name:lower() and node.objectType == "Database" then
+                    found_db_node = true
+                    db_node_path = node.nodePath
+                    expand(db_node_path)
+
+                elseif (node.label:lower() == "databases" or node.label:lower() == "system databases") then
+                    expand(node.nodePath)
+                end
+
+            elseif found_db_node or not session.target_path then
+                local current_base = found_db_node and db_node_path or root_path
+                if vim.startswith(node.nodePath, current_base) then
+                    expand(node.nodePath)
+                end
+            end
+            ::continue::
+        end
+
+        expand_count = expand_count - 1
+        if expand_count == 0 then
+            if not session.target_path or found_db_node then
+                clean_up_and_return(cache)
+            else
+                clean_up_and_return(false)
+            end
+        end
+    end
+
+    expand = function(path)
+        expand_count = expand_count + 1
+
+        vim.schedule(function()
+            if cancellation_token.cancel then
+                clean_up_and_return(false)
+                return
+            end
+
+            ---@diagnostic disable-next-line: param-type-mismatch
+            local status, _request_id = lsp_client:request("objectexplorer/expand", {
+                sessionId = session_id,
+                nodePath = path,
+            }, function(expand_err, result)
+                if expand_err then
+                    utils.log_warn("Expand request failed for " .. path .. ": " .. (expand_err.message or "unknown error"))
+
+					expand_count = expand_count - 1
+					if expand_count == 0 then
+						if not session.target_path or found_db_node then
+							clean_up_and_return(cache)
+						else
+							clean_up_and_return(false)
+						end
+					end
+                    return
+                end
+
+                if result then
+					on_expand_result(nil, result, { client_id = lsp_client.id })
+                end
+            end)
+
+            if not status then
+				clean_up_and_return(nil, "LSP Request failed to send")
+            end
+        end)
+		end
+
+    if session_id then
+        active_sessions[session_id] = on_expand_result
+    end
+
+    state.on_event("objectexplorer/expandcompleted", main_expand_handler)
+
+    timeout_timer = vim.defer_fn(function()
+        if coroutine.status(co) == "suspended" then
+            clean_up_and_return(nil, "Operation timed out waiting for object explorer expansion")
+        end
+    end, math.floor(remaining_ms))
+
+    expand(session.rootNode.nodePath)
+    local result, cr_err = coroutine.yield()
+    if cr_err then
+        return nil, cr_err
+    end
+
+    return result
 end
 
 ---@param item MssqlNode
@@ -383,8 +466,17 @@ end
 ---@param lsp_client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
 ---@param force? boolean
+---@param timeout_ms? integer Optional timeout in milliseconds (default: 10000)
 ---@return boolean success
-M.initialise_cache_async = function(lsp_client, connection_options, force)
+M.initialise_cache_async = function(lsp_client, connection_options, force, timeout_ms)
+	if type(timeout_ms) ~= "number" or timeout_ms <= 0 then
+		timeout_ms = 10000
+	end
+
+	if type(force) ~= "boolean" or not force then
+		force = false
+	end
+
 	local key = vim.json.encode(connection_options) --[[@as ConnectionKey]]
 	if not global_cache[key] then
 		global_cache[key] = {}
@@ -404,7 +496,12 @@ M.initialise_cache_async = function(lsp_client, connection_options, force)
 
 	global_cache[key].refresh_coroutine = coroutine.running()
 	vim.cmd("redrawstatus")
-	local new_cache = get_object_cache_async(lsp_client, connection_options, cancellation_token)
+	local new_cache, err = get_object_cache_async(lsp_client, connection_options, cancellation_token, timeout_ms)
+	if err then
+		utils.log_warn("Cache initialization failed: " .. tostring(err))
+		return false
+	end
+
 	if not cancellation_token.cancel and type(new_cache) == "table" then
 		global_cache[key].cache = new_cache
 	end
@@ -475,6 +572,19 @@ end
 ---@return table<string, GlobalCacheEntry>
 M.get_cache = function()
 	return global_cache
+end
+
+---TESTING ONLY: Cancels background jobs and wipes state.
+M.reset_all_state = function()
+	for _, entry in ipairs(global_cache) do
+		if entry.cancellation_token then
+			entry.cancellation_token.cancel = true
+		end
+	end
+
+	global_cache = {}
+
+	active_sessions = {}
 end
 
 return M

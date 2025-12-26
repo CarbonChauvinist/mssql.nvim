@@ -16,6 +16,8 @@ require("mssql.default_opts")
 ---@class MssqlConnectionOptions
 ---@field server? string
 ---@field database? string
+---@field databaseAllowList? string[]
+---@field databaseDenyList? string[]
 ---@field user? string
 ---@field password? string
 ---@field authentication? string
@@ -210,6 +212,17 @@ end
 ---@return string
 function MssqlQueryManager:get_owner_uri()
 	return utils.lsp_file_uri(self.bufnr) or ""
+end
+
+---@return string? database_name Returns nil if not connected
+function MssqlQueryManager:get_database_name()
+	local params = self:get_connect_params()
+
+	if params and params.connection and params.connection.options then
+		return params.connection.options.database
+	end
+
+	return nil
 end
 
 --- Sets the internal state, with validation, and redraws the statusline.

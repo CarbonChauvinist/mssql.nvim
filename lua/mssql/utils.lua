@@ -6,45 +6,15 @@ local function log(msg, level)
 	if type(msg) == "table" then
 		msg = vim.inspect(msg)
 	end
+
+	msg = tostring(msg or "nil")
+
 	vim.schedule(function()
 		vim.notify(msg, level, {
 			title = "MSSQL",
 			plugin = "MSSQL",
 		})
 	end)
-end
-
--- as far as I can tell, only one handler can exist for an Lsp
--- method. This lets you register/unregister multiple handlers
-M.register_lsp_handler = function(lsp_client, method, handler)
-	if not lsp_client.custom_handlers then
-		lsp_client.custom_handlers = {}
-	end
-	if not lsp_client.custom_handlers[method] then
-		lsp_client.custom_handlers[method] = {}
-	end
-	lsp_client.custom_handlers[method][handler] = true
-
-	lsp_client.handlers[method] = function(err, result, ctx)
-		for custom_handler, _ in pairs(lsp_client.custom_handlers[method]) do
-			-- Use pcall to ensure one crashing handler doesn't stop others
-			local success, msg = pcall(custom_handler, err, result, ctx)
-			if not success then
-				-- Log the error so we know something wrong, but keep going
-				-- Use vim.schedule to avoid interrupting the LSP client loop
-				vim.schedule(function()
-					vim.notify("MSSQL Handler Error: " .. tostring(msg), vim.log.levels.ERROR)
-				end)
-			end
-		end
-	end
-end
-
-M.unregister_lsp_handler = function(lsp_client, method, handler)
-	if not (lsp_client.custom_handlers and lsp_client.custom_handlers[method]) then
-		return
-	end
-	lsp_client.custom_handlers[method][handler] = nil
 end
 
 M.wait_for_schedule_async = function()
@@ -186,48 +156,43 @@ M.defer_async = function(ms)
 	coroutine.yield()
 end
 
----Waits for the lsp to call the given method, with optional timeout.
+---Waits for specific notification from the LSP via the Global Router.
 ---Must be run inside a coroutine.
----@param bufnr integer
+---@param _bufnr integer
 ---@param client vim.lsp.Client
 ---@param method string
----@param timeout_in_ms? integer
+---@param timeout_ms? integer
 ---@return any result
 ---@return lsp.ResponseError? error
-M.wait_for_notification_async = function(bufnr, client, method, timeout_in_ms)
-	local owner_uri = M.lsp_file_uri(bufnr)
-	local this = coroutine.running()
+M.wait_for_notification_async = function(_bufnr, client, method, timeout_ms)
+	timeout_ms = timeout_ms or 10000
+	local state = require("mssql.state")
+	local co = coroutine.running()
 	local resumed = false
-	local handler
-	handler = function(err, result, _)
-		if not resumed and result and result.ownerUri == owner_uri then
-			resumed = true
-			M.unregister_lsp_handler(client, method, handler)
-			M.try_resume(this, result, err)
-		end
-		return result, err
-	end
-	M.register_lsp_handler(client, method, handler)
 
-	-- Only schedule timeout if valid, positive timeout is provided
-	if timeout_in_ms and timeout_in_ms > 0 then
-		vim.defer_fn(function()
+	local dispose = state.on_event(method, function(err, result, ctx)
+		if ctx and ctx.client_id == client.id then
 			if not resumed then
 				resumed = true
-				M.unregister_lsp_handler(client, method, handler)
-				M.try_resume(
-					this,
-					nil,
-					vim.lsp.rpc_response_error(
-						vim.lsp.protocol.ErrorCodes.UnknownErrorCode,
-						"Waiting for the lsp to call " .. method .. " timed out for buffer " .. bufnr
-					)
-				)
+				M.try_resume(co, result, err)
 			end
-		end, timeout_in_ms)
-	end
+		end
+	end)
 
-	return coroutine.yield()
+	vim.defer_fn(function()
+		if not resumed then
+			resumed = true
+			dispose()
+			M.try_resume(co, nil, {
+				code = -32001, -- timeout code
+				message = "Waiting for " .. method .. " timed out"
+			})
+		end
+	end, timeout_ms)
+
+	local result, err = coroutine.yield()
+	dispose()
+	return result, err
 end
 
 M.ui_select_async = function(items, opts)
@@ -408,6 +373,111 @@ M.filter_list = function(items, allow, deny)
 
 		return true
 	end, items)
+end
+
+---Waits for the lsp attach to the given buffer, with optional timeout.
+---Must be run inside a coroutine.
+---@param bufnr_to_watch integer
+---@param timeout integer
+---@return vim.lsp.Client
+M.wait_for_on_attach_async = function(bufnr_to_watch, timeout)
+	local state = require("mssql.state")
+	-- if it's already attach, return
+	local existing_client = vim.lsp.get_clients({ name = "mssql_ls", bufnr = bufnr_to_watch })[1]
+	if existing_client then
+		return existing_client
+	end
+
+	local this = coroutine.running()
+	local resumed = false
+
+	local on_attach_handler = function(client)
+		if not resumed then
+			resumed = true
+			M.try_resume(this, client)
+		end
+	end
+
+	state.add_attach_handler(bufnr_to_watch, on_attach_handler)
+
+	vim.defer_fn(function()
+		if not resumed then
+			resumed = true
+			M.log_error("Waiting for the lsp to attach to buffer " .. bufnr_to_watch .. " timed out")
+		end
+	end, timeout)
+
+	return coroutine.yield()
+end
+
+---@param path string
+---@return table
+M.read_json_file = function(path)
+	local file
+	if path then
+		file = io.open(path, "r")
+	end
+	if not file then
+		return {}
+	end
+	local content = file:read("*a")
+	file:close()
+	return vim.json.decode(content)
+end
+
+---@param path string
+---@param tbl table
+M.write_json_file = function(path, tbl)
+	local file
+	if path then
+		file = io.open(path, "w")
+	end
+	local text = vim.json.encode(tbl)
+	if file then
+		file:write(text)
+		file:close()
+	else
+		error("Could not open file: " .. path, 0)
+	end
+end
+
+---@param opts MssqlConfig
+---@return table|nil
+M.get_connections = function(opts)
+	local f = io.open(opts.connections_file, "r")
+	if not f then
+		return nil
+	end
+
+	local content = f:read("*a")
+	f:close()
+	local ok, json = pcall(vim.fn.json_decode, content)
+	M.safe_assert(
+		ok and type(json) == "table" and not vim.islist(json),
+		"The connections json file must contain a valid json object"
+	)
+	return json
+end
+
+---@param opts MssqlConfig
+M.edit_connections = function(opts)
+	if vim.fn.filereadable(opts.connections_file) == 0 then
+		M.log_info("Connections json file not found. Creating...")
+		local default_connections = [=[
+{
+  "Example (edit this)": {
+    "server": "localhost",
+    "database": "master",
+    "authenticationType" : "SqlLogin",
+    "user" : "Admin",
+    "password" : "Your_Password",
+    "trustServerCertificate" : true
+  }
+}
+]=]
+		vim.fn.writefile(vim.split(default_connections, "\n"), opts.connections_file)
+	end
+	vim.cmd.edit(opts.connections_file)
 end
 
 return M

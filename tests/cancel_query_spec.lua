@@ -28,7 +28,7 @@ return {
     assert(
 		is_connected_after_cancel,
 		"Query manager should be 'Connected' after cancellation, but was '" .. polled_state .. "'"
-		)
+	)
 
 	cleanup()
   end,
