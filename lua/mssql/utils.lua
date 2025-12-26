@@ -375,41 +375,6 @@ M.filter_list = function(items, allow, deny)
 	end, items)
 end
 
----Waits for the lsp attach to the given buffer, with optional timeout.
----Must be run inside a coroutine.
----@param bufnr_to_watch integer
----@param timeout integer
----@return vim.lsp.Client
-M.wait_for_on_attach_async = function(bufnr_to_watch, timeout)
-	local state = require("mssql.state")
-	-- if it's already attach, return
-	local existing_client = vim.lsp.get_clients({ name = "mssql_ls", bufnr = bufnr_to_watch })[1]
-	if existing_client then
-		return existing_client
-	end
-
-	local this = coroutine.running()
-	local resumed = false
-
-	local on_attach_handler = function(client)
-		if not resumed then
-			resumed = true
-			M.try_resume(this, client)
-		end
-	end
-
-	state.add_attach_handler(bufnr_to_watch, on_attach_handler)
-
-	vim.defer_fn(function()
-		if not resumed then
-			resumed = true
-			M.log_error("Waiting for the lsp to attach to buffer " .. bufnr_to_watch .. " timed out")
-		end
-	end, timeout)
-
-	return coroutine.yield()
-end
-
 ---@param path string
 ---@return table
 M.read_json_file = function(path)
