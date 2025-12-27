@@ -178,8 +178,6 @@ local function main_expand_handler(err, result, ctx)
 	end
 end
 
-state.on_event("objectexplorer/expandCompleted", main_expand_handler)
-
 ---@param lsp_client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
 ---@param cancellation_token { cancel: boolean }
@@ -192,6 +190,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
         timeout_ms = 10000
     end
 	local start_time = vim.uv.hrtime()
+	state.on_event("objectexplorer/expandcompleted", main_expand_handler, "mssql_find_object_global")
     local session, err = get_session_async(lsp_client, connection_options, timeout_ms)
 
     if not session or not session.sessionId or not session.rootNode then
@@ -347,7 +346,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
         active_sessions[session_id] = on_expand_result
     end
 
-    state.on_event("objectexplorer/expandcompleted", main_expand_handler)
+    -- state.on_event("objectexplorer/expandcompleted", main_expand_handler)
 
     timeout_timer = vim.defer_fn(function()
         if coroutine.status(co) == "suspended" then

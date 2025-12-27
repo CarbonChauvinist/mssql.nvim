@@ -42,13 +42,12 @@ end
 ---@return function
 local generic_event_router = function(method)
 	return function(err, result, ctx, config)
-		local normalized_method = method:lower()
-		state.emit_event(normalized_method, err, result, ctx)
+		state.emit_event(method, err, result, ctx)
 	end
 end
 
 local customized_handlers = {
-	["textDocument/intelliSenseReady"] = make_handler("textDocument/intelliSenseReady", function(err, result, ctx)
+	["textdocument/intellisenseready"] = make_handler("textdocument/intellisenseready", function(err, result, ctx)
 		if err then
 			utils.log_error("Could not start intellisense: " .. vim.inspect(err))
 		else
@@ -94,6 +93,10 @@ local customized_handlers = {
 
 setmetatable(customized_handlers, {
 	__index = function(t, method)
+		local lower_key = method:lower()
+		local handler = rawget(t, lower_key)
+		if handler then return handler end
+
 		local is_mssql_method = method:match("^query/")
 			or method:match("^[Cc]onnection/")
 			or method:match("^[Oo]bject[Ee]xplorer/")
@@ -111,36 +114,58 @@ M.clean_cache = clean_cache
 ---Waits for the lsp to attach to the given buffer, with optional timeout
 ---Must be run inside a coroutine
 ---@param bufnr integer
----@param timeout? integer
----@return vim.lsp.Client
-M.wait_for_attach = function(bufnr, timeout)
-	local existing_client = vim.lsp.get_clients({ name = lsp_name, bufnr = bufnr })[1]
-	if existing_client then return existing_client end
+---@param timeout_ms? integer
+---@return vim.lsp.Client?
+M.wait_for_attach = function(bufnr, timeout_ms)
+	timeout_ms = timeout_ms or 10000
+	local start_time = vim.loop.now()
+	local interval_ms = 50
 
-	local co = coroutine.running()
-	local resumed = false
+	while (vim.loop.now() - start_time) < timeout_ms do
+		local existing_client = vim.lsp.get_clients({ name = lsp_name, bufnr = bufnr })[1]
+		if existing_client then return existing_client end
 
-	local on_attach_handler = function(client)
-		if not resumed then
-			resumed = true
-			utils.try_resume(co, client)
-		end
+		local qm = state.get_query_manager(bufnr)
+		if qm and qm.client then return qm.client end
+
+		utils.defer_async(interval_ms)
 	end
 
-	state.add_attach_handler(bufnr, on_attach_handler)
-
-	if timeout then
-		vim.defer_fn(function()
-			if not resumed then
-				resumed = true
-				utils.log_error("Waiting for the lsp to attach to buffer " .. bufnr .. " timed out")
-				-- handler will be cleaned up next time on_attach fires
-				utils.try_resume(co, nil)
-			end
-		end, timeout)
-	end
-	return coroutine.yield()
+	utils.log_error("Timed out waiting for LSP to attach to buffer " .. bufnr)
+	return nil
 end
+-- 	local existing_client = vim.lsp.get_clients({ name = lsp_name, bufnr = bufnr })[1]
+-- 	-- if existing_client then return existing_client end
+--
+-- 	local qm = state.get_query_manager(bufnr)
+-- 	if qm and qm.client then
+-- 		return qm.client
+-- 	end
+--
+-- 	local co = coroutine.running()
+-- 	local resumed = false
+--
+-- 	local on_attach_handler = function(client)
+-- 		if not resumed then
+-- 			resumed = true
+-- 			utils.try_resume(co, client)
+-- 		end
+-- 	end
+--
+-- 	state.add_attach_handler(bufnr, on_attach_handler)
+--
+-- 	if timeout then
+-- 		vim.defer_fn(function()
+-- 			if not resumed then
+-- 				resumed = true
+-- 				utils.log_error("Waiting for the lsp to attach to buffer " .. bufnr .. " timed out")
+-- 				-- handler will be cleaned up next time on_attach fires
+-- 				utils.try_resume(co, nil)
+-- 			end
+-- 		end, timeout)
+-- 	end
+-- 	return coroutine.yield()
+-- end
 
 
 M.enable = function()

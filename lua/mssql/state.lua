@@ -18,6 +18,9 @@ local attach_handlers = {}
 ---@type table<string, function[]?>
 local event_listeners = {}
 
+---@type table<string, function[]?>
+local named_listeners = {}
+
 ---@param client_id integer
 M.set_client_ready = function(client_id)
 	ready_clients[client_id] = true
@@ -112,8 +115,25 @@ end
 ---Registers a one-off listener for an LSP method.
 ---@param method string The LSP method name (e.g., "query/complete")
 ---@param callback function(err, result, ctx)
+---@param group_id? string (Optional) Unique ID to prevent duplication
 ---@return function dispose Function to remove the listener
-M.on_event = function(method, callback)
+M.on_event = function(method, callback, group_id)
+	method = method:lower()
+
+	-- handle named listeners (idempotent)
+	if group_id then
+		if not named_listeners[method] then named_listeners[method] = {} end
+		named_listeners[method][group_id] = callback
+
+		-- returns disposer for this specific ID
+		return function()
+			if named_listeners[method] then
+				named_listeners[method][group_id] = nil
+			end
+		end
+	end
+
+	-- handle anon listeners
 	if not event_listeners[method] then
 		event_listeners[method] = {}
 	end
@@ -138,11 +158,15 @@ end
 ---@param result any
 ---@param ctx any
 M.emit_event = function(method, err, result, ctx)
-	local listeners = event_listeners[method]
-	if listeners then
-		-- Copy list to iterate safely in case callbacks remove themselves
-		local callbacks = { unpack(listeners) }
-		for _, cb in ipairs(callbacks) do
+	method = method:lower()
+	if event_listeners[method] then
+		for _, cb in ipairs(event_listeners[method]) do
+			pcall(cb, err, result, ctx)
+		end
+	end
+
+	if named_listeners[method] then
+		for _, cb in pairs(named_listeners[method]) do
 			pcall(cb, err, result, ctx)
 		end
 	end
@@ -152,6 +176,7 @@ end
 ---Use in teardown/after_each block of specs to ensure isolation.
 M._reset_all_state = function()
 	event_listeners = {}
+	named_listeners = {}
 	attach_handlers = {}
 	query_managers = {}
 	ready_clients = {}
