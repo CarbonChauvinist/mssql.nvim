@@ -71,7 +71,7 @@ require("mssql.default_opts")
 ---@field states MssqlQueryManagerStates
 ---@field last_connect_params MssqlConnectParams
 ---@field owner_uri string
----@field execution_timer uv.uv_timer_t?
+---@field execution_timer MssqlTimer
 ---@field last_execution_info MssqlExecutionInfo
 ---@field start_time number
 ---@field query_timeout number?
@@ -117,7 +117,7 @@ function MssqlQueryManager.new(bufnr, client, opts)
 	self.client = client
 	self.state = MssqlQueryManager.states.disconnected
 	self.last_connect_params = nil
-	self.execution_timer = nil
+	self.execution_timer = utils.Timer.new()
 	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
 	self.start_time = 0
 	self.query_timeout = opts.query_timeout
@@ -251,74 +251,52 @@ end
 
 --- Stops and cleans up the execution timer.
 function MssqlQueryManager:cleanup_timer()
-	if self.execution_timer and not self.execution_timer:is_closing() then
-		self.execution_timer:stop()
-		self.execution_timer:close()
-		self.execution_timer = nil
-	end
+	self.execution_timer:close()
 end
 
 --- Stops timer and calculates final time.
 function MssqlQueryManager:stop_execution_timer()
-	if self.execution_timer then
-		if self.start_time > 0 then
-			self.last_execution_info.elapsed_time = (vim.loop.now() - self.start_time) / 1000
-		end
-		self:cleanup_timer()
-		self.start_time = 0
-		vim.schedule(function()
-			if self.bufnr and vim.api.nvim_buf_is_valid(self.bufnr) then
-				vim.cmd("redrawstatus")
-			end
-		end)
+	if self.start_time > 0 then
+		self.last_execution_info.elapsed_time = (vim.loop.now() - self.start_time) / 1000
 	end
+
+	self.execution_timer:stop()
+
+	self.start_time = 0
+	vim.schedule(function()
+		if self.bufnr and vim.api.nvim_buf_is_valid(self.bufnr) then
+			vim.cmd("redrawstatus")
+		end
+	end)
+
 end
 
 --- Starts the timer loop for execution tracking.
 ---@return boolean success
 function MssqlQueryManager:start_execution_timer()
 	self:stop_execution_timer()
+
 	self.last_execution_info = {
 		rows_affected = nil,
 		elapsed_time = 0
 	}
 	self.start_time = vim.loop.now()
-
-	local timer = vim.loop.new_timer()
-	if not timer then
-		utils.log_error("Failed to create execution timer")
-		return false
-	end
-
 	local bufnr = self.bufnr
-	if not bufnr then
-		utils.log_error("QueryManager object has no buffer assigned")
-		return false
-	end
 
-	local success, err = pcall(function()
-		timer:start(0, 1000, vim.schedule_wrap(function()
-			if not vim.api.nvim_buf_is_valid(bufnr) then
-				self:cleanup_timer()
-				return
-			end
+	self.execution_timer:start(1000, function()
+		if not vim.api.nvim_buf_is_valid(bufnr) then
+			self:cleanup_timer()
+			return
+		end
 
-			if self.state == MssqlQueryManager.states.executing then
-				self.last_execution_info.elapsed_time = (vim.loop.now() - self.start_time) / 1000
-				vim.cmd("redrawstatus")
-			else
-				self:stop_execution_timer()
-			end
-		end))
+		if self.state == MssqlQueryManager.states.executing then
+			self.last_execution_info.elapsed_time = (vim.loop.now() - self.start_time) / 1000
+			vim.cmd("redrawstatus")
+		else
+			self:stop_execution_timer()
+		end
 	end)
 
-	if not success then
-		utils.log_error("Failed to start execution timer: " .. (err or "unknown error"))
-		timer:close()
-		return false
-	end
-
-	self.execution_timer = timer
 	return true
 end
 

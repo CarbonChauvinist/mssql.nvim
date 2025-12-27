@@ -1,5 +1,44 @@
 local M = {}
 
+---@class MssqlTimer
+---@field handle uv.uv_timer_t?
+local Timer = {}
+Timer.__index = Timer
+
+---@return MssqlTimer
+function Timer.new()
+	return setmetatable({ handle = vim.uv.new_timer() }, M.Timer)
+end
+
+---Starts the timer. Automatically stops if already running.
+---@param interval_ms integer
+---@param callback function
+function Timer:start(interval_ms, callback)
+	if not self.handle or self.handle:is_closing() then
+		self.handle = vim.loop.new_timer()
+	end
+	self:stop()
+	self.handle:start(0, interval_ms, vim.schedule_wrap(callback))
+end
+
+---Stops the timer without closing the handle (reusable).
+function Timer:stop()
+	if self.handle and not self.handle:is_closing() then
+		self.handle:stop()
+	end
+end
+
+---Stops and closes the timer handle (for garbage collection).
+function Timer:close()
+	self:stop()
+	if self.handle and not self.handle:is_closing() then
+		self.handle:close()
+	end
+	self.handle = nil
+end
+
+M.Timer = Timer
+
 ---@param msg string
 ---@param level vim.log.levels
 local function log(msg, level)
