@@ -87,7 +87,9 @@ M.add_attach_handler = function(bufnr, handler)
 	end
 
 	local handler_type = type(handler)
-	if handler_type ~= "table" or handler_type ~= "function" then return false, "Attempted to add handler that was neither table nor function." end
+	if handler_type ~= "table" and handler_type ~= "function" then
+		return false, "Attempted to add handler that was neither table nor function."
+	end
 	if handler_type == "table" then
 		local handler_count = 0
 		for _, h in ipairs(handler) do
@@ -122,6 +124,9 @@ M.on_event = function(method, callback, group_id)
 
 	-- handle named listeners (idempotent)
 	if group_id then
+		if type(group_id) ~= "string" then
+			error("group_id must be a string")
+		end
 		if not named_listeners[method] then named_listeners[method] = {} end
 		named_listeners[method][group_id] = callback
 
