@@ -1,6 +1,9 @@
+local state = require("mssql.state")
+
 local M = {}
 
-local picker_icons = {
+---@Type MssqlIconsFindObject
+local fallback_default_picker_icons = {
 	AggregateFunctionPartitionFunction = "󰡱",
 	ScalarValuedFunction = "󰡱",
 	StoredProcedure = "󰯁",
@@ -13,6 +16,10 @@ local picker_icons = {
 ---@param opts PickerOptions Configuration options
 ---@param on_select fun(item: any, intent: string?) Callback when selection is made
 M.pick = function(items, opts, on_select)
+	local config = state.get_config() or {}
+	local user_icons = (config.icons and config.icons.find_object) or {}
+	local icons = setmetatable(user_icons, { __index = fallback_default_picker_icons })
+
 	local title = opts.title or "Select Item"
 	local keymaps = opts.keymaps or {}
 	local has_snacks, snacks = pcall(require, "snacks")
@@ -35,7 +42,7 @@ M.pick = function(items, opts, on_select)
 			items = items,
 			format = function(item)
 				return {
-					{ picker_icons[item.nodeType] or picker_icons.default, "SnacksPickerIcon" },
+					{ icons[item.nodeType], "SnacksPickerIcon" },
 					{ " " },
 					{ item.label },
 					{ " " },
@@ -64,7 +71,7 @@ M.pick = function(items, opts, on_select)
 		-- Format: "1|  Tables/dbo.Car"
 		local fzf_lines = {}
 		for i, item in ipairs(items) do
-			local icon = picker_icons[item.nodeType] or picker_icons.default
+			local icon = icons[item.nodeType]
 			local display = string.format("%s %s%s", icon, item.picker_path or "", item.label)
 			table.insert(fzf_lines, string.format("%d| %s", i, display))
 		end
@@ -102,7 +109,7 @@ M.pick = function(items, opts, on_select)
 	vim.ui.select(items, {
 		prompt = title,
 		format_item = function(item)
-			local icon = picker_icons[item.nodeType] or picker_icons.default
+			local icon = icons[item.nodeType]
 			return string.format("%s %s%s", icon, item.picker_path or "", item.label)
 		end,
 	}, function(item)

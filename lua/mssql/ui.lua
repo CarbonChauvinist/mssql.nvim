@@ -181,7 +181,7 @@ M.lualine_component = {
 		end
 
 		local qm_state = qm:get_state()
-		local icons = config and config.icons or {}
+		local icons = config and config.icons and config.icons.status_line or {}
 
 		if qm_state == qm.states.disconnected then
 			local disconnected_icon = (icons.enabled and icons.disconnected .. " ") or ""

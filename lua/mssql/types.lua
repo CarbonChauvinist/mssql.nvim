@@ -44,11 +44,24 @@
 ---@field cancellation_token? { cancel: boolean }
 ---@field refresh_coroutine? thread
 
----@class MssqlIcons
+---@class MssqlIconsStatusLine
 ---@field enabled boolean?
 ---@field disconnected string?
 ---@field server string?
 ---@field database string?
+
+---@class MssqlIconsFindObject
+---@field enabled boolean?
+---@field AggregateFunctionPartitionFunction string?
+---@field ScalarValuedFunction string?
+---@field StoredProcedure string?
+---@field TableValuedFunction string?
+---@field Table string?
+---@field View string?
+
+---@class MssqlIcons
+---@field status_line MssqlIconsStatusLine?
+---@field find_object MssqlIconsFindObject?
 
 ---@class MssqlResultsKeymaps
 ---@field prev_page string?

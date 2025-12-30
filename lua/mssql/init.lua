@@ -36,12 +36,18 @@ local function setup_async(opts)
 
     -- ensure that we use user's custom icons if configured, but validate are only single character
     if opts.icons then
-        for key, icon in pairs(opts.icons) do
-            if key ~= "enabled" and type(icon) == "string" and vim.fn.strchars(icon) > 1 then
-                utils.log_warn("Icon '" .. key .. "' should be a single character, got: " .. icon .. ". Resetting to plugin default")
-				icon = default_opts.icons[key]
-            end
-        end
+		for group_name, group_config in pairs(opts.icons) do
+			if type(group_config) == "table" then
+				for icon_label, icon in pairs(group_config) do
+					if icon_label ~= "enabled" and type(icon) == "string" and vim.fn.strchars(icon) > 1 then
+						utils.log_warn("Icon '" .. icon_label .. "' should be a single character, got: " .. icon .. ". Resetting to plugin default")
+						if default_opts.icons[group_name] then
+							opts.icons[group_name][icon_label] = default_opts.icons[group_name][icon_label]
+						end
+					end
+				end
+			end
+		end
     end
 
 	-- validate max_rows since now used for paginagtion

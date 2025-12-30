@@ -90,14 +90,25 @@ local M = {
 	-- Directory to store download tools and internal config options
 	data_dir = vim.fs.joinpath(vim.fn.stdpath("data"), "/mssql.nvim"):gsub("[/\\]+$", ""),
 
-	-- Configuration for icons in default lualine component
+	-- Configuration for icons
 	---@type MssqlIcons
 	icons = {
-		enabled = false,
-		disconnected = "",
-		server = "",
-		database = "",
-	}
+		status_line = {
+			enabled = true,
+			disconnected = "",
+			server = "",
+			database = "",
+		},
+		find_object = {
+			enabled = true,
+			AggregateFunctionPartitionFunction = "󰡱",
+			ScalarValuedFunction = "󰡱",
+			StoredProcedure = "󰯁",
+			TableValuedFunction = "󰡱",
+			Table = "",
+			View = "󱂬",
+		},
+	},
 }
 
 return M
