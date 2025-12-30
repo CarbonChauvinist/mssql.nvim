@@ -33,16 +33,13 @@ end
 ---@param opts? MssqlConfig
 local function setup_async(opts)
 	opts = vim.tbl_deep_extend("keep", opts or {}, default_opts)
-	state.set_config(opts)
-	ui.set_show_results_option(opts)
-	ui.set_view_message_option(opts)
 
     -- ensure that we use user's custom icons if configured, but validate are only single character
     if opts.icons then
-        opts.icons = vim.tbl_deep_extend("force", default_opts.icons, opts.icons)
         for key, icon in pairs(opts.icons) do
             if key ~= "enabled" and type(icon) == "string" and vim.fn.strchars(icon) > 1 then
-                utils.log_warn("Icon '" .. key .. "' should be a single character, got: " .. icon)
+                utils.log_warn("Icon '" .. key .. "' should be a single character, got: " .. icon .. ". Resetting to plugin default")
+				icon = default_opts.icons[key]
             end
         end
     end
