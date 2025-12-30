@@ -71,6 +71,14 @@ local M = {
 		last_page = "<C-M-n>",
 	},
 
+	-- keymaps for find_objects actions
+	find_object_keymaps = {
+		["<M-c>"] = "create",
+		["<M-s>"] = "select",
+		["<M-d>"] = "drop",
+		["<M-a>"] = "menu",
+	},
+
 	-- Path to a json connections file (see https://github.com/Kurren123/mssql.nvim?tab=readme-ov-file#connections-json-file)
 	-- If nil, it's stored in the data_dir
 	connections_file = nil,

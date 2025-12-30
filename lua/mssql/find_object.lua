@@ -1,8 +1,62 @@
 local utils = require("mssql.utils")
 local state = require("mssql.state")
+local picker = require("mssql.picker")
 
 local M = {}
 
+-- Constants for Scripting Actions
+---@type table<string, ScriptStrategy>
+local ScriptType = {
+	SELECT = "ScriptSelect",
+	CREATE = "ScriptCreate",
+	DROP = "ScriptDrop"
+}
+
+-- Operation Codes (matches SMO/ServiceLayer enums)
+local OpCode = {
+	SELECT = 0,
+	CREATE = 1,
+	INSERT = 2,
+	UPDATE = 3,
+	DELETE = 4,
+	DROP = 1,
+	ALTER = 6,
+}
+
+---@type table<string, NodeTypeAction>
+local Actions = {
+	SELECT = {
+		id = "select",
+		label = "Select (TOP 1000)",
+		scriptCreateDrop = ScriptType.SELECT,
+		operation = OpCode.SELECT,
+	},
+	CREATE = {
+		id = "create",
+		label = "Create",
+		scriptCreateDrop = ScriptType.CREATE,
+		operation = OpCode.CREATE,
+	},
+	DROP = {
+		id = "drop",
+		label = "Drop",
+		scriptCreateDrop = ScriptType.DROP,
+		operation = OpCode.DROP,
+	},
+	ALTER = {
+		id = "alter",
+		label = "Alter",
+		scriptCreateDrop = ScriptType.CREATE,
+		operation = OpCode.ALTER
+	}
+}
+
+---@param base_action NodeTypeAction
+---@param new_label string
+---@return NodeTypeAction
+local function with_label(base_action, new_label)
+	return vim.tbl_extend("force", base_action, { label = new_label })
+end
 
 ---@param client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
@@ -106,31 +160,26 @@ end
 --]]
 
 
----@type table<string, NodeTypeDef>
+---@type table<string, { default: NodeTypeAction, actions?: NodeTypeAction[] }>
 local nodeTypes = {
-	AggregateFunctionPartitionFunction = {
-		scriptCreateDrop = "ScriptCreate",
-		operation = 6,
-	},
-	ScalarValuedFunction = {
-		scriptCreateDrop = "ScriptCreate",
-		operation = 6,
-	},
-	StoredProcedure = {
-		scriptCreateDrop = "ScriptCreate",
-		operation = 6,
-	},
-	TableValuedFunction = {
-		scriptCreateDrop = "ScriptCreate",
-		operation = 6,
-	},
+	AggregateFunctionPartitionFunction = { default = Actions.CREATE, },
+	ScalarValuedFunction = { default = Actions.CREATE, },
+	StoredProcedure = { default = Actions.ALTER, },
+	TableValuedFunction = { default = Actions.CREATE, },
 	Table = {
-		scriptCreateDrop = "ScriptSelect",
-		operation = 0,
+		default = Actions.CREATE,
+		actions = {
+			Actions.SELECT,
+			with_label(Actions.CREATE, "Create Table"),
+			with_label(Actions.DROP, "Drop Table"),
+		},
 	},
 	View = {
-		scriptCreateDrop = "ScriptSelect",
-		operation = 0,
+		default = Actions.SELECT,
+		actions = {
+			Actions.SELECT,
+			with_label(Actions.CREATE, "Create View"),
+		},
 	},
 }
 
@@ -319,8 +368,6 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
         active_sessions[session_id] = on_expand_result
     end
 
-    -- state.on_event("objectexplorer/expandcompleted", main_expand_handler)
-
     timeout_timer = vim.defer_fn(function()
         if coroutine.status(co) == "suspended" then
             clean_up_and_return(nil, "Operation timed out waiting for object explorer expansion")
@@ -338,8 +385,18 @@ end
 
 ---@param item MssqlNode
 ---@param client vim.lsp.Client
+---@param action_def table (Optional) The specific operation to perform
 ---@return { script: string, select: boolean }
-local generate_script_async = function(item, client)
+local generate_script_async = function(item, client, action_def)
+
+	local type_config = nodeTypes[item.objectType]
+	local def = action_def or (type_config and type_config.default) or type_config
+	if not def then
+		local msg = "No script definition found for " .. tostring(item.objectType)
+		utils.log_error(msg)
+		error(msg, 0)
+	end
+
 	local scripting_params = {
 		scriptDestination = "ToEditor",
 		scriptingObjects = {
@@ -350,13 +407,14 @@ local generate_script_async = function(item, client)
 			},
 		},
 		scriptOptions = {
-			scriptCreateDrop = nodeTypes[item.objectType].scriptCreateDrop,
+			scriptCreateDrop = def.scriptCreateDrop,
 			typeOfDataToScript = "SchemaOnly",
 			scriptStatistics = "ScriptStatsNone",
 		},
 		ownerURI = utils.lsp_file_uri(0),
-		operation = nodeTypes[item.objectType].operation,
+		operation = def.operation,
 	}
+
 	local res, script_err = utils.lsp_request_async(client, "scripting/script", scripting_params)
 	if script_err then
 		error("Error generating script: " .. vim.inspect({ err = script_err, scripting_params = scripting_params }), 0)
@@ -369,7 +427,7 @@ local generate_script_async = function(item, client)
 	return {
 		-- strip carriage returns
 		script = res.script:gsub("\r", ""),
-		select = scripting_params.operation == 0,
+		select = (scripting_params.operation == 0),
 	}
 end
 
@@ -377,59 +435,21 @@ end
 ---@type table<ConnectionKey, GlobalCacheEntry>
 local global_cache = {}
 
--- Picker
-local picker_icons = {
-	AggregateFunctionPartitionFunction = "󰡱",
-	ScalarValuedFunction = "󰡱",
-	StoredProcedure = "󰯁",
-	TableValuedFunction = "󰡱",
-	Table = "",
-	View = "󱂬",
-}
-
 ---@param cache MssqlNode[]
 ---@param title string
----@return MssqlNode?
+---@return MssqlNode? item
+---@return string? intent The action ID (e.g. "create", "drop", "menu") or nil for default
 local pick_item_async = function(cache, title)
-	local co = coroutine.running()
+    local co = coroutine.running()
+    local config = state.get_config()
 
-	local success, snacks = pcall(require, "snacks")
-	if not success then
-		return utils.ui_select_async(cache, {
-			prompt = title,
-			format_item = function(item)
-				return table.concat({
-					picker_icons[item.nodeType],
-					" ",
-					item.picker_path,
-					item.label,
-				})
-			end,
-		})
-	end
-
-	snacks.picker.pick({
+	picker.pick(cache, {
 		title = title,
-		layout = "select",
-		items = cache,
-		format = function(item)
-			return {
-				{ picker_icons[item.nodeType], "SnacksPickerIcon" },
-				{ " " },
-				{ item.label },
-				{ " " },
-				{ item.picker_path, "SnacksPickerComment" },
-			}
-		end,
-		confirm = function(picker, item)
-			picker:close()
-			coroutine.resume(co, item)
-		end,
-		cancel = function(picker)
-			picker:close()
-			coroutine.resume(co, nil)
-		end,
-	})
+		keymaps = (config and config.find_object_keymaps) or {}
+	}, function(item, intent)
+		utils.try_resume(co, item, intent)
+	end)
+
 	return coroutine.yield()
 end
 
@@ -488,18 +508,54 @@ M.find_async = function(connection_options, lsp_client)
 	if connection_options and connection_options.database and connection_options.server then
 		title = connection_options.server .. " | " .. connection_options.database
 	end
+
 	local key = vim.json.encode(connection_options)
 	---@type MssqlNode[]
-	local cache = {}
-	if global_cache[key] and global_cache[key].cache then
-		cache = global_cache[key].cache --[[@as MssqlNode[] ]]
+	local cache = (global_cache[key] and global_cache[key].cache) or {}
+
+	local item, intent = pick_item_async(cache, title)
+	if not item then return	end
+
+	local type_config = nodeTypes[item.objectType]
+	local chosen_action = nil
+
+	if intent and intent ~= "menu" then
+		-- fast track direct selections (e.g. Alt-C, Alt-D)
+		if type_config and type_config.actions then
+			for _, act in ipairs(type_config.actions) do
+				if act.id == intent then
+					chosen_action = act
+					break
+				end
+			end
+		end
+
+	elseif intent == "menu" and type_config and type_config.actions and #type_config.actions > 1 then
+		local co = coroutine.running()
+
+		-- map to simple string to avoid UI crashes
+		local action_labels = {}
+		for _, act in ipairs(type_config.actions) do
+			table.insert(action_labels, act.label)
+		end
+
+		vim.schedule(function()
+			vim.ui.select(action_labels, {
+				prompt = "Action for " .. item.label .. ":",
+			}, function(choice, idx)
+				if choice and idx then
+					utils.try_resume(co, type_config.actions[idx])
+				else
+					utils.try_resume(co, nil)
+				end
+			end)
+		end)
+
+		chosen_action = coroutine.yield()
+		if not chosen_action then return end
 	end
 
-	local item = pick_item_async(cache, title)
-	if not item then
-		return
-	end
-	return generate_script_async(item, lsp_client)
+	return generate_script_async(item, lsp_client, chosen_action)
 end
 
 ---@param in_use_connections MssqlConnectionOptions[]
