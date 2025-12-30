@@ -8,6 +8,24 @@ return {
 		local buf, _, _, cleanup = test_utils.test_scaffold({ target_db = "TestDbB" })
 		test_utils.wait_for_cache_content("dbo.Car", { type = "Table" })
 
+		-- mock select
+		local original_select = vim.ui.select
+
+		---@diagnostic disable-next-line: duplicate-set-field
+		vim.ui.select = function(items, opts, on_choice)
+			if opts.prompt:match("Action for") then
+				local idx
+				for i, label in ipairs(items) do
+					if label:lower():match("drop") then idx = i break end
+				end
+				vim.schedule(function()
+					on_choice(items[idx], idx)
+				end)
+			else
+				original_select(items, opts, on_choice)
+			end
+		end
+
 		-- mock picker allows to intercept call to pick and immediately trigger callback
 		local original_pick = picker.pick
 		local next_intent = nil
@@ -61,6 +79,29 @@ return {
 		end)
 		assert(drop_success, "Failed to generate DROP script")
 
+		-- test 4 - menu action - intent menu picks drop
+		wipe_buf(buf)
+		next_intent = "menu"
+
+		mssql.find_object(buf)
+		local menu_success = test_utils.poll(function()
+			local content = test_utils.get_buffer_content(buf)
+			return content:lower():match("drop table")
+		end)
+		assert(menu_success, "Failed to generate a DROP script via menu flow")
+
+		-- test 5 - cancellation - ensure pressing escape (item is nil) doesn't throw error
+		wipe_buf(buf)
+
+		---@diagnostic disable-next-line: duplicate-set-field
+		picker.pick = function(_, _, on_select)
+			vim.schedule(function() on_select(nil, nil) end)
+		end
+
+		local status, err = pcall(function() mssql.find_object(buf) end)
+		assert(status, "Find object crashed on cancellation: " .. tostring(err))
+
+		vim.ui.select = original_select
 		picker.pick = original_pick
 		cleanup()
 	end,
