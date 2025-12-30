@@ -19,7 +19,7 @@ local function make_directory(path)
 	end
 end
 
----@return MssqlConfig? conf
+---@return MssqlOptions? conf
 local function get_config_or_warn()
 	local conf = state.get_config()
 	if not conf then
@@ -30,6 +30,7 @@ local function get_config_or_warn()
 end
 
 -- Asynchronous setup logic (downloading tools, etc.)
+---@param opts? MssqlConfig
 local function setup_async(opts)
 	opts = vim.tbl_deep_extend("keep", opts or {}, default_opts)
 	state.set_config(opts)
@@ -53,11 +54,13 @@ local function setup_async(opts)
 	end
 
 	opts.connections_file = opts.connections_file or joinpath(opts.data_dir, "connections.json")
+
+	---@cast opts MssqlOptions
+
 	state.set_config(opts)
 	ui.set_show_results_option(opts)
 	ui.set_view_message_option(opts)
 	make_directory(opts.data_dir)
-
 
 	-- if the opts specify a tools file path, don't download.
 	if opts.tools_file then

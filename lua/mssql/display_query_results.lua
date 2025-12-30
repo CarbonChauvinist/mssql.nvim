@@ -1,28 +1,11 @@
----@class QueryResultInfo
----@field totalRows integer
----@field currentRowsOffset integer
----@field rowsPerQuery integer
----@field max_column_width integer
----@field ownerUri string
----@field batchIndex integer
----@field resultSetIndex integer
----@field columnInfo ColumnInfo[]
-
----@class ColumnInfo
----@field columnName string
-
----@class SubsetParams
----@field ownerUri string
----@field batchIndex integer
----@field resultSetIndex integer
----@field rowsStartIndex integer
----@field rowsCount integer
-
 local utils = require("mssql.utils")
 
 local M = {}
+---@type integer[]
 local result_buffers = {}
 
+---@param table string[][]
+---@param limit integer
 local function sanitise(table, limit)
 	for _, record in ipairs(table) do
 		for index, value in ipairs(record) do
@@ -38,6 +21,10 @@ local function sanitise(table, limit)
 	end
 end
 
+---@param column_header string
+---@param rows string[][]
+---@param column_index integer
+---@return integer
 local function column_width(column_header, rows, column_index)
 	local row_max = vim.iter(rows)
 		:map(function(record)
@@ -48,6 +35,9 @@ local function column_width(column_header, rows, column_index)
 	return math.max(vim.fn.strdisplaywidth(column_header), row_max)
 end
 
+---@param column_headers string[]
+---@param rows string[][]
+---@return integer[]
 local function column_widths(column_headers, rows)
 	if not column_headers then
 		return {}
@@ -60,6 +50,10 @@ local function column_widths(column_headers, rows)
 		:totable()
 end
 
+---@param str string
+---@param len integer
+---@param char string
+---@return string
 local function right_pad(str, len, char)
 	if vim.fn.strdisplaywidth(str) >= len then
 		return str
@@ -67,6 +61,9 @@ local function right_pad(str, len, char)
 	return str .. string.rep(char, len - vim.fn.strdisplaywidth(str))
 end
 
+---@param row string[]
+---@param widths integer[]
+---@return string
 local function row_to_string(row, widths)
 	local padded_cells = vim.iter(ipairs(row))
 		:map(function(column_index, value)
@@ -76,6 +73,8 @@ local function row_to_string(row, widths)
 	return "| " .. table.concat(padded_cells, " | ") .. " |"
 end
 
+---@param widths integer[]
+---@return string
 local function header_divider(widths)
 	if not widths then
 		return ""
@@ -89,9 +88,13 @@ local function header_divider(widths)
 	return row_to_string(dashes_row, widths)
 end
 
+---@param column_headers string[]
+---@param rows string[][]
+---@param max_width integer
+---@return string[]
 local function pretty_print(column_headers, rows, max_width)
 	if not column_headers then
-		return ""
+		return { "" }
 	end
 
 	sanitise(rows, max_width)
@@ -108,6 +111,9 @@ local function pretty_print(column_headers, rows, max_width)
 end
 
 
+---@param name string
+---@param filetype? string
+---@return integer bufnr
 local function create_buffer(name, filetype)
 	local bufnr = vim.api.nvim_create_buf(false, false)
 	table.insert(result_buffers, bufnr)
@@ -118,6 +124,8 @@ local function create_buffer(name, filetype)
 	return bufnr
 end
 
+---@param lines string[]
+---@param bufnr integer
 local function display_markdown(lines, bufnr)
 	-- due to pagination need to make writeable/modifiable at first
 	vim.api.nvim_set_option_value("modifiable", true, { buf = bufnr })
@@ -203,6 +211,9 @@ local function fetch_and_render_page(bufnr, new_offset)
 	end)
 end
 
+---@param result_set_summary MssqlResultSetSummary
+---@param subset_params SubsetParams
+---@param opts MssqlOptions
 local function show_result_set_async(result_set_summary, subset_params, opts)
 	local column_headers = vim.iter(result_set_summary.columnInfo)
 		:map(function(i)
@@ -222,7 +233,9 @@ local function show_result_set_async(result_set_summary, subset_params, opts)
 		"results " .. subset_params.batchIndex + 1 .. "-" .. subset_params.resultSetIndex + 1 .. extension,
 		opts.results_buffer_filetype
 	)
-	vim.b[buf].query_result_info = {
+
+	---@type QueryResultInfo
+	local info = {
 		ownerUri = subset_params.ownerUri,
 		batchIndex = subset_params.batchIndex,
 		resultSetIndex = subset_params.resultSetIndex,
@@ -232,6 +245,8 @@ local function show_result_set_async(result_set_summary, subset_params, opts)
 		columnInfo = result_set_summary.columnInfo,
 		max_column_width = opts.max_column_width,
 	}
+	vim.b[buf].query_result_info = info
+
 	display_markdown(lines, buf)
 	opts.open_results_in(buf)
 
@@ -276,7 +291,7 @@ function M.prev_page()
 		fetch_and_render_page(buf, info.currentRowsOffset - info.rowsPerQuery)
 	end))
 end
----
+
 ---Navigate to the first page of query results
 function M.first_page()
 	utils.try_resume(coroutine.create(function()
@@ -333,6 +348,8 @@ function M.get_pagination_status(bufnr)
 end
 
 
+---@param opts MssqlOptions
+---@param result MssqlQueryExecuteSubsetResult
 function M.display_query_results(opts, result)
 	-- delete existing result buffers
 	for _, result_buffer in ipairs(result_buffers) do

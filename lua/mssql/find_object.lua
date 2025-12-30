@@ -3,30 +3,6 @@ local state = require("mssql.state")
 
 local M = {}
 
----@class MssqlNode
----@field nodePath string
----@field label string
----@field nodeType string
----@field objectType string
----@field parentNodePath string
----@field isLeaf boolean
----@field metadata? table
----@field picker_path? string
----@field text? string
-
----@class MssqlSession
----@field sessionId string
----@field success boolean
----@field errorMessage? string
----@field rootNode MssqlNode
----@field target_path? string
-
----@class GlobalCacheEntry
----@field cache? MssqlNode[]
----@field cancellation_token? { cancel: boolean }
----@field refresh_coroutine? thread
-
----@alias ConnectionKey string
 
 ---@param client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
@@ -129,9 +105,6 @@ end
 		}
 --]]
 
----@class NodeTypeDef
----@field scriptCreateDrop string "ScriptCreate" | "ScriptSelect"
----@field operation integer
 
 ---@type table<string, NodeTypeDef>
 local nodeTypes = {

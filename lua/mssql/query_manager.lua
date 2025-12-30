@@ -2,89 +2,10 @@ local utils = require("mssql.utils")
 local finder = require("mssql.find_object")
 require("mssql.default_opts")
 
----@alias MssqlQueryManagerState
----| "disconnected"
----| "connecting"
----| "connected"
----| "executing"
----| "cancelling"
-
----@class MssqlExecutionInfo
----@field rows_affected? number
----@field elapsed_time? number
-
----@class MssqlConnectionOptions
----@field server? string
----@field database? string
----@field databaseAllowList? string[]
----@field databaseDenyList? string[]
----@field user? string
----@field password? string
----@field authentication? string
----@field trustServerCertificate? boolean
----@field [string] any Allow extra fields passed by config
-
----@class MssqlConnectionSummary
----@field databaseName string
----@field serverName? string
----@field userName? string
----@field connectionId? string
-
----@class MssqlConnectionWrapper
----@field options MssqlConnectionOptions
----@field summary? MssqlConnectionSummary
-
----@class MssqlConnectParams
----@field ownerUri? string The URI of the buffer owning this connection.
----@field connection MssqlConnectionWrapper
-
----@class MssqlQueryCompleteResult
----@field ownerUri string
----@field batchSummaries MssqlBatchSummary[]
-
----@class MssqlBatchSummary
----@field executionElapsed? string
----@field resultSetSummaries? MssqlResultSetSummary[]
----@field rowCount? integer
-
----@class MssqlResultSetSummary
----@field rowCount integer
----@field columnInfo? table
-
----@class MssqlQueryMessageResult
----@field ownerUri string
----@field message MssqlQueryMessage
-
----@class MssqlQueryMessage
----@field message string
----@field isError? boolean
----@field batchId? integer
-
----@class MssqlConnectionChangedResult
----@field ownerUri string
----@field connection MssqlConnectionSummary
-
----@class MssqlQueryManager
----@field bufnr integer
----@field client vim.lsp.Client
----@field state MssqlQueryManagerState
----@field states MssqlQueryManagerStates
----@field last_connect_params MssqlConnectParams
----@field owner_uri string
----@field execution_timer MssqlTimer
----@field last_execution_info MssqlExecutionInfo
----@field start_time number
----@field query_timeout number?
 local MssqlQueryManager = {}
 MssqlQueryManager.__index = MssqlQueryManager
 
----@class MssqlQueryManagerStates
----@field disconnected MssqlQueryManagerState
----@field connecting MssqlQueryManagerState
----@field connected MssqlQueryManagerState
----@field executing MssqlQueryManagerState
----@field cancelling MssqlQueryManagerState
-
+---@type MssqlQueryManagerStates
 MssqlQueryManager.states = {
 	disconnected = "disconnected",
 	connecting = "connecting",
@@ -92,9 +13,6 @@ MssqlQueryManager.states = {
 	executing = "executing",
 	cancelling = "cancelling",
 }
-
---- State transition definition type
----@alias StateTransitionTable table<MssqlQueryManagerState, MssqlQueryManagerState[]>
 
 ---@type StateTransitionTable
 local STATE_TRANSITIONS = {

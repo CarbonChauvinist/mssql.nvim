@@ -1,13 +1,14 @@
 local M = {}
 
----@class MssqlTimer
----@field handle uv.uv_timer_t?
 local Timer = {}
 Timer.__index = Timer
 
+---Creates a new reusable Timer instance.
 ---@return MssqlTimer
 function Timer.new()
-	return setmetatable({ handle = vim.uv.new_timer() }, M.Timer)
+	local self = setmetatable({}, Timer)
+	self.handle = vim.uv.new_timer()
+	return self
 end
 
 ---Starts the timer. Automatically stops if already running.
@@ -15,7 +16,7 @@ end
 ---@param callback function
 function Timer:start(interval_ms, callback)
 	if not self.handle or self.handle:is_closing() then
-		self.handle = vim.loop.new_timer()
+		self.handle = vim.uv.new_timer()
 	end
 	self:stop()
 	self.handle:start(0, interval_ms, vim.schedule_wrap(callback))

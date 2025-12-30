@@ -21,7 +21,7 @@ M.clean_cache = function()
 	require("mssql.find_object").delete_unused_cache(in_use_connections)
 end
 
----@param opts MssqlConfig
+---@param opts MssqlOptions
 M.setup = function(opts)
 	vim.api.nvim_create_augroup("AutoNameSQL", { clear = true })
 

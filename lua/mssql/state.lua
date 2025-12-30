@@ -1,10 +1,12 @@
+local default_opts = require("mssql.default_opts")
+
 local M = {}
 
 ---@type table<integer, boolean>
 local ready_clients = {}
 
 -- Store the latest configuration here so closures always see the current version
----@type MssqlConfig
+---@type MssqlOptions
 local current_config = {}
 
 ---@type table<integer, MssqlQueryManager>
@@ -32,12 +34,12 @@ M.is_client_ready = function(client_id)
 	return ready_clients[client_id] == true
 end
 
----@return MssqlConfig?
+---@return MssqlOptions?
 M.get_config = function()
-	return current_config or {}
+	return current_config
 end
 
----@param opts? MssqlConfig
+---@param opts? MssqlOptions
 M.set_config = function(opts)
 	current_config = opts or {}
 end

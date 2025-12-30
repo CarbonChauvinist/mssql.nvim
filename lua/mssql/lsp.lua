@@ -41,7 +41,7 @@ end
 ---@param method string
 ---@return function
 local generic_event_router = function(method)
-	return function(err, result, ctx, config)
+	return function(err, result, ctx, _config)
 		state.emit_event(method, err, result, ctx)
 	end
 end

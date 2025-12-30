@@ -4,7 +4,7 @@ local ui = require("mssql.ui")
 
 local M = {}
 
----@param opts MssqlConfig
+---@param opts MssqlOptions
 M.new_default_query_async = function(opts)
 	utils.wait_for_schedule_async()
 
@@ -232,7 +232,7 @@ M.switch_database_async = function(bufnr)
 	utils.log_info("Connected")
 end
 
----@param opts MssqlConfig
+---@param opts MssqlOptions
 ---@param query_manager MssqlQueryManager
 ---@param bufnr integer
 ---@return boolean? success

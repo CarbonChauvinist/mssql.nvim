@@ -19,7 +19,7 @@ end
 ---Creates a new query buffer and waits for LSP attachment (default 10s)
 ---@param timeout_ms? integer
 ---@return integer buf
----@return vim.lsp.Client lsp
+---@return vim.lsp.Client? lsp
 M.new_query_async = function(timeout_ms)
 	timeout_ms = timeout_ms or 10000
 	-- The language server requires all files to have a file name.
