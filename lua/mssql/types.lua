@@ -1,25 +1,26 @@
 ---@meta
 
----@alias ScriptStrategy "ScriptCreate" | "ScriptSelect" | "ScriptDrop" | "ScriptCreateDrop"
+---@alias MssqlActionId "create" | "alter" | "drop" | "select" | "execute"
+---@alias MssqlScriptStrategy "ScriptSelect" | "ScriptCreate" | "ScriptDrop"
+---@alias MssqlOpCodeInteger 0 | 1 | 2 | 3 | 4 | 5 | 6
+
 ---@alias ConnectionKey string
----@alias MssqlQueryManagerState
----| "disconnected"
----| "connecting"
----| "connected"
----| "executing"
----| "cancelling"
+---@alias MssqlQueryManagerState "disconnected" | "connecting" | "connected" | "executing" | "cancelling"
 ---@alias StateTransitionTable table<MssqlQueryManagerState, MssqlQueryManagerState[]>
 
+---@class NodeActionConfig
+---@field default MssqlActionId The default action ID (e.g. "create")
+---@field actions MssqlActionEntry[]? List of available actions
 
----@class NodeTypeDef
----@field scriptCreateDrop string "ScriptCreate" | "ScriptSelect"
----@field operation integer
+---@class MssqlActionEntry
+---@field action MssqlActionId The ID of the action to perform
+---@field label string? Optional override for the picker label
 
----@class NodeTypeAction
----@field id string Action ID (e.g. "create", "drop") used for the keymap lookup
+---@class MssqlResolvedAction
+---@field id MssqlActionId Action ID (e.g. "create", "drop") used for the keymap lookup
 ---@field label string Display label for the picker
----@field scriptCreateDrop ScriptStrategy The scripting strategy
----@field operation integer The operation code (e.g. 0=Select, 1=Create)
+---@field script_type MssqlScriptStrategy Strict script strategy
+---@field op MssqlOpCodeInteger Strict operation code
 
 ---@class MssqlNode
 ---@field nodePath string
@@ -88,6 +89,7 @@
 ---@field tools_file string? Path to existing SQL tools binary.
 ---@field data_dir string? Directory for tools and config.
 ---@field icons MssqlIcons? Icon configuration.
+---@field find_object_actions table<string, NodeActionConfig>? Configuration for object actions (Table, View, etc)
 
 ---@class MssqlOptions : MssqlConfig
 ---@field open_results_in ("split"|"vsplit"|"current_window"|fun(bufnr: integer))
@@ -106,6 +108,7 @@
 ---@field tools_file string
 ---@field data_dir string
 ---@field icons MssqlIcons
+---@field find_object_actions table<string, NodeActionConfig>
 
 ---@class MssqlTimer
 ---@field handle uv_timer_t? The internal libuv handle
@@ -214,6 +217,6 @@
 
 ---@class PickerOptions
 ---@field title string The title/prompt for the picker
----@field keymaps table<string, string> Key chords mapped to Intent IDs (e.g. { ["<M-c>"] = "create" })
+---@field keymaps table<string, MssqlActionId> Key chords mapped to Intent IDs (e.g. { ["<M-c>"] = "create" })
 
 return {}

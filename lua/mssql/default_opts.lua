@@ -76,7 +76,8 @@ local M = {
 		["<M-c>"] = "create",
 		["<M-s>"] = "select",
 		["<M-d>"] = "drop",
-		["<M-a>"] = "menu",
+		["<M-a>"] = "alter",
+		["<M-m>"] = "menu",
 	},
 
 	-- Path to a json connections file (see https://github.com/Kurren123/mssql.nvim?tab=readme-ov-file#connections-json-file)
@@ -109,6 +110,42 @@ local M = {
 			View = "󱂬",
 		},
 	},
+
+
+	---@type table<string, NodeActionConfig[]>
+	find_object_actions = {
+		sp = {
+			default = "alter",
+			actions = {
+				{ action = "create", label = "Create Sproc" },
+				{ action = "execute", label = "Execute Sproc" },
+				{ action = "alter", label = "Alter Sproc "}
+			}
+		},
+		t = {
+			default = "create",
+			actions = {
+				{ action = "drop", label = "Drop Table" },
+				{ action = "create", label = "Create Table" },
+				{ action = "select", label = "Select Table (TOP 1000)" }
+			}
+		},
+		v = {
+			default = "select",
+			actions = {
+				{ action = "create", label = "Create View" },
+				{ action = "alter", label = "Alter View" }
+			}
+		},
+		f = {
+			default = "execute",
+			actions = {
+				{ action = "create", label = "Create Function" },
+				{ action = "alter", label = "Alter Function" },
+				{ action = "drop", label = "Drop Function" }
+			}
+		},
+	}
 }
 
 return M

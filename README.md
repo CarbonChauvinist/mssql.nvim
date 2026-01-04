@@ -127,7 +127,7 @@ you provide will be a which-key group.
 
 ### Lualine
 
-Insert `require("mssql").lualine_component` into a lualine section (eg
+Insert `require("mssql.ui").lualine_component` into a lualine section (eg
 `lualine_c`).
 
 Eg lazyvim:
@@ -137,7 +137,7 @@ return {
   "nvim-lualine/lualine.nvim",
   dependencies = { "Kurren123/mssql.nvim" },
   opts = function(_, opts)
-    table.insert(opts.sections.lualine_c, require("mssql").lualine_component)
+    table.insert(opts.sections.lualine_c, require("mssql.ui").lualine_component)
     return opts
   end,
 }
@@ -152,7 +152,7 @@ return {
   opts = {
       sections = {
         lualine_c = {
-          require('mssql').lualine_component,
+          require('mssql.ui').lualine_component,
         },
       },
     },
@@ -183,7 +183,7 @@ So eg a [heirline](https://github.com/rebelot/heirline.nvim) component would
 look like:
 
 ```lua
-local lualine_component = require("mssql").lualine_component
+local lualine_component = require("mssql.ui").lualine_component
 local mssql_heirline_component = {
  provider = lualine_component[1],
  condition = lualine_component.cond,
@@ -290,6 +290,44 @@ end)
 See
 [here](https://github.com/Kurren123/mssql.nvim/blob/main/lua/mssql/default_opts.lua)
 for all options and defaults
+
+### Object Explorer Actions
+
+You can customize the actions available in the Object Finder (`:MssqlFindObject`) via the `find_object_actions` option. This allows you to set default actions (what happens on `<CR>`) and available actions for the picker.
+
+**Available Intents:** `"select"`, `"create"`, `"insert"`, `"update"`, `"delete"`, `"execute"`, `"alter"`, `"drop"`.
+
+**Default Configuration:**
+```lua
+require("mssql").setup({
+  -- Keymaps to trigger specific intents immediately from the picker
+  find_object_keymaps = {
+    ["<M-c>"] = "create", -- Generate CREATE script
+    ["<M-s>"] = "select", -- Generate SELECT script
+    ["<M-d>"] = "drop",   -- Generate DROP script
+    ["<M-a>"] = "alter",  -- Generate ALTER script
+    ["<M-m>"] = "menu",   -- Open a submenu of actions
+  },
+
+  find_object_actions = {
+    -- Tables (t)
+    t = {
+      default = "create", -- Default action (Enter)
+      actions = {
+        "drop",
+        "create",
+        { action = "select", label = "Select Top 1000" } -- Custom label
+      }
+    },
+    -- Views (v)
+    v = { default = "select", actions = { "create", "alter", "select" } },
+    -- Stored Procedures (sp)
+    sp = { default = "alter", actions = { "execute", "alter", "create" } },
+    -- Functions (f)
+    f = { default = "execute", actions = { "create", "alter", "drop" } },
+  }
+})
+```
 
 ### Notes
 

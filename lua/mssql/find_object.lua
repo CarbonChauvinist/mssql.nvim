@@ -4,58 +4,94 @@ local picker = require("mssql.picker")
 
 local M = {}
 
+-- one cache per server and db (ie per connect opts)
+---@type table<ConnectionKey, GlobalCacheEntry>
+local global_cache = {}
+
+-- SESSION ROUTER
+-- Tracks active callbacks by Session ID so multiple sessions don't clobber each other's handlers
+---@type table<string, function>
+local active_sessions = {}
+
 -- Constants for Scripting Actions
----@type table<string, ScriptStrategy>
+---@enum MssqlScriptType
 local ScriptType = {
-	SELECT = "ScriptSelect",
-	CREATE = "ScriptCreate",
-	DROP = "ScriptDrop"
+	SELECT = "ScriptSelect", --[[@as MssqlScriptStrategy]]
+	CREATE = "ScriptCreate", --[[@as MssqlScriptStrategy]]
+	DROP = "ScriptDrop" --[[@as MssqlScriptStrategy]]
 }
 
 -- Operation Codes (matches SMO/ServiceLayer enums)
+---@enum MssqlOpCode
 local OpCode = {
-	SELECT = 0,
-	CREATE = 1,
-	INSERT = 2,
-	UPDATE = 3,
-	DELETE = 4,
-	DROP = 1,
-	ALTER = 6,
+	SELECT = 0, --[[@as MssqlOpCodeInteger]]
+	CREATE = 1, --[[@as MssqlOpCodeInteger]]
+	INSERT = 2, --[[@as MssqlOpCodeInteger]]
+	UPDATE = 3, --[[@as MssqlOpCodeInteger]]
+	DELETE = 4, --[[@as MssqlOpCodeInteger]]
+	EXECUTE = 5, --[[@as MssqlOpCodeInteger]]
+	ALTER = 6, --[[@as MssqlOpCodeInteger]]
 }
 
----@type table<string, NodeTypeAction>
-local Actions = {
-	SELECT = {
+-- lookup table mapping ObjectType strings to Config Key strings
+---@type table<string, string>
+local OBJECT_TYPE_MAP = {
+	AggregateFunctionPartitionFunction = "f",
+	ScalarValuedFunction = "f",
+	StoredProcedure = "sp",
+	TableValuedFunction = "f",
+	Table = "t",
+	View = "v",
+}
+
+-- internal registry
+---@type table<MssqlActionId, { id: MssqlActionId, op: MssqlOpCodeInteger, script_type: MssqlScriptStrategy, default_label: string }>
+local BUILTIN_ACTIONS = {
+	select = {
 		id = "select",
-		label = "Select (TOP 1000)",
-		scriptCreateDrop = ScriptType.SELECT,
-		operation = OpCode.SELECT,
+		op = OpCode.SELECT,
+		script_type = ScriptType.SELECT,
+		default_label = "Select (TOP 1000)",
 	},
-	CREATE = {
+	create = {
 		id = "create",
-		label = "Create",
-		scriptCreateDrop = ScriptType.CREATE,
-		operation = OpCode.CREATE,
+		op = OpCode.CREATE,
+		script_type = ScriptType.CREATE,
+		default_label = "Create",
 	},
-	DROP = {
+	drop = {
 		id = "drop",
-		label = "Drop",
-		scriptCreateDrop = ScriptType.DROP,
-		operation = OpCode.DROP,
+		op = OpCode.DELETE,
+		script_type = ScriptType.DROP,
+		default_label = "Drop"
 	},
-	ALTER = {
+	alter = {
 		id = "alter",
-		label = "Alter",
-		scriptCreateDrop = ScriptType.CREATE,
-		operation = OpCode.ALTER
+		op = OpCode.ALTER,
+		script_type = ScriptType.CREATE,
+		default_label = "Alter",
+	},
+	execute = {
+		id = "execute",
+		op = OpCode.EXECUTE,
+		script_type = ScriptType.CREATE,
+		default_label = "Execute"
 	}
 }
 
----@param base_action NodeTypeAction
----@param new_label string
----@return NodeTypeAction
-local function with_label(base_action, new_label)
-	return vim.tbl_extend("force", base_action, { label = new_label })
+---Resolves a user config entry (string or table) to an internal action definition
+---@param user_entry MssqlActionId|MssqlActionEntry
+---@return MssqlResolvedAction?
+local function resolve_action(user_entry)
+	if not user_entry then return nil end
+
+	if type(user_entry) == "string" then
+		return BUILTIN_ACTIONS[user_entry]
+	end
+
+	local def = BUILTIN_ACTIONS[user_entry.action]
+	if not def then return nil end
+	return vim.tbl_extend("force", def, { label = user_entry.label })
 end
 
 ---@param client vim.lsp.Client
@@ -159,35 +195,6 @@ end
 		}
 --]]
 
-
----@type table<string, { default: NodeTypeAction, actions?: NodeTypeAction[] }>
-local nodeTypes = {
-	AggregateFunctionPartitionFunction = { default = Actions.CREATE, },
-	ScalarValuedFunction = { default = Actions.CREATE, },
-	StoredProcedure = { default = Actions.ALTER, },
-	TableValuedFunction = { default = Actions.CREATE, },
-	Table = {
-		default = Actions.CREATE,
-		actions = {
-			Actions.SELECT,
-			with_label(Actions.CREATE, "Create Table"),
-			with_label(Actions.DROP, "Drop Table"),
-		},
-	},
-	View = {
-		default = Actions.SELECT,
-		actions = {
-			Actions.SELECT,
-			with_label(Actions.CREATE, "Create View"),
-		},
-	},
-}
-
--- SESSION ROUTER
--- Tracks active callbacks by Session ID so multiple sessions don't clobber each other's handlers
----@type table<string, function>
-local active_sessions = {}
-
 ---@param err lsp.ResponseError?
 ---@param result { sessionId: string }?
 ---@param ctx table
@@ -282,7 +289,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 		end
 
         for _, node in ipairs(expand_result.nodes) do
-            if nodeTypes[node.objectType] then
+            if OBJECT_TYPE_MAP[node.objectType] then
                 local path = node.parentNodePath
 
                 if not vim.startswith(path, db_node_path) then
@@ -385,13 +392,21 @@ end
 
 ---@param item MssqlNode
 ---@param client vim.lsp.Client
----@param action_def table (Optional) The specific operation to perform
+---@param action_def MssqlResolvedAction? The resolved action definition
 ---@return { script: string, select: boolean }
 local generate_script_async = function(item, client, action_def)
 
-	local type_config = nodeTypes[item.objectType]
-	local def = action_def or (type_config and type_config.default) or type_config
-	if not def then
+	local config = state.get_config() or {}
+
+	-- resolve default if no specific action passed
+	if not action_def then
+		local type_key = OBJECT_TYPE_MAP[item.objectType]
+		local type_config = config.find_object_actions and config.find_object_actions[type_key]
+		action_def = resolve_action(type_config and type_config.default)
+	end
+
+	-- local def = action_def or resolve_action(type_config and type_config.default)
+	if not action_def then
 		local msg = "No script definition found for " .. tostring(item.objectType)
 		utils.log_error(msg)
 		error(msg, 0)
@@ -407,12 +422,12 @@ local generate_script_async = function(item, client, action_def)
 			},
 		},
 		scriptOptions = {
-			scriptCreateDrop = def.scriptCreateDrop,
+			scriptCreateDrop = action_def.script_type,
 			typeOfDataToScript = "SchemaOnly",
 			scriptStatistics = "ScriptStatsNone",
 		},
 		ownerURI = utils.lsp_file_uri(0),
-		operation = def.operation,
+		operation = action_def.op,
 	}
 
 	local res, script_err = utils.lsp_request_async(client, "scripting/script", scripting_params)
@@ -430,10 +445,6 @@ local generate_script_async = function(item, client, action_def)
 		select = (scripting_params.operation == 0),
 	}
 end
-
--- one cache per server and db (ie per connect opts)
----@type table<ConnectionKey, GlobalCacheEntry>
-local global_cache = {}
 
 ---@param cache MssqlNode[]
 ---@param title string
@@ -514,17 +525,20 @@ M.find_async = function(connection_options, lsp_client)
 	local cache = (global_cache[key] and global_cache[key].cache) or {}
 
 	local item, intent = pick_item_async(cache, title)
-	if not item then return	end
+	if not item then return end
 
-	local type_config = nodeTypes[item.objectType]
+	local config = state.get_config() or {}
+	local config_key = OBJECT_TYPE_MAP[item.objectType]
+	local type_config = config.find_object_actions[config_key]
+
 	local chosen_action = nil
 
 	if intent and intent ~= "menu" then
 		-- fast track direct selections (e.g. Alt-C, Alt-D)
 		if type_config and type_config.actions then
 			for _, act in ipairs(type_config.actions) do
-				if act.id == intent then
-					chosen_action = act
+				if act.action == intent then
+					chosen_action = resolve_action(act)
 					break
 				end
 			end
@@ -536,15 +550,15 @@ M.find_async = function(connection_options, lsp_client)
 		-- map to simple string to avoid UI crashes
 		local action_labels = {}
 		for _, act in ipairs(type_config.actions) do
-			table.insert(action_labels, act.label)
+			table.insert(action_labels, act.label or act.action)
 		end
 
 		vim.schedule(function()
 			vim.ui.select(action_labels, {
-				prompt = "Action for " .. item.label .. ":",
+				prompt = "Action for " .. item.objectType .. ":",
 			}, function(choice, idx)
 				if choice and idx then
-					utils.try_resume(co, type_config.actions[idx])
+					utils.try_resume(co, resolve_action(type_config.actions[idx]))
 				else
 					utils.try_resume(co, nil)
 				end
