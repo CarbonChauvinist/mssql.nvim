@@ -2,6 +2,21 @@ local mssql = require("mssql")
 local picker = require("mssql.picker")
 local test_utils = require("tests.utils")
 
+-- mock picker allows to intercept call to pick and immediately trigger callback
+local original_pick = picker.pick
+local next_intent = nil
+
+local spec_pick = function(items, _opts, on_select)
+	local target
+	for _, item in ipairs(items) do
+		if item.label == "dbo.Car" then target = item break end
+	end
+
+	vim.schedule(function()
+		on_select(target, next_intent)
+	end)
+end
+
 return {
 	test_name = "Finder integration: script generation",
 	run_test_async = function()
@@ -26,21 +41,8 @@ return {
 			end
 		end
 
-		-- mock picker allows to intercept call to pick and immediately trigger callback
-		local original_pick = picker.pick
-		local next_intent = nil
-
 		---@diagnostic disable-next-line: duplicate-set-field
-		picker.pick = function(items, _opts, on_select)
-			local target
-			for _, item in ipairs(items) do
-				if item.label == "dbo.Car" then target = item break end
-			end
-
-			vim.schedule(function()
-				on_select(target, next_intent)
-			end)
-		end
+		picker.pick = spec_pick
 
 		-- helper to wipe buffer so we can reuse it
 		local wipe_buf = function(bufnr)
@@ -100,6 +102,52 @@ return {
 
 		local status, err = pcall(function() mssql.find_object(buf) end)
 		assert(status, "Find object crashed on cancellation: " .. tostring(err))
+
+
+		-- test 6 - user config override
+		wipe_buf(buf)
+		next_intent = nil
+		res_buf = nil
+		picker.pick = spec_pick
+
+		local state = require("mssql.state")
+		local original_config = state.get_config()
+		local new_config = vim.deepcopy(original_config or {})
+		new_config.find_object_actions = {
+			t = {
+				default = "select",
+				actions = {
+					{ action = "select" },
+					{ action = "create" }
+				}
+			}
+		}
+		state.set_config(new_config)
+
+		mssql.find_object(buf)
+		local override_success = test_utils.poll(function()
+			local content = test_utils.get_buffer_content(buf)
+			return content:lower():match("select top %(1000%)")
+		end)
+		res_buf = test_utils.res_buf_catcher()
+
+		assert(override_success, "Failed to respect User Configuration Override (Default -> Select)")
+		if res_buf then
+			assert(test_utils.get_buffer_content(res_buf):lower():match("hyundai"), "Results not as expected")
+			test_utils.cleanup_results_buffer(res_buf)
+		end
+		wipe_buf(buf)
+
+		state.set_config(original_config)
+
+		-- test 7 - unknown intent graceful fallback
+		wipe_buf(buf)
+		next_intent = "unknown thing"
+
+		local unknown_intent_status, unknown_intent_err = pcall(function() mssql.find_object(buf) end)
+		assert(unknown_intent_status, "Plugin crashed on unknown intent: " .. tostring(unknown_intent_err))
+		local content = test_utils.get_buffer_content(buf)
+		assert(content == "", "Should not generate script for unknown intent. Got: " .. content)
 
 		vim.ui.select = original_select
 		picker.pick = original_pick

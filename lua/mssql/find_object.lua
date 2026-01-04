@@ -544,6 +544,11 @@ M.find_async = function(connection_options, lsp_client)
 			end
 		end
 
+		if not chosen_action then
+			utils.log_warn("Action '" .. intent .. "' not found for object type " .. item.objectType)
+			return
+		end
+
 	elseif intent == "menu" and type_config and type_config.actions and #type_config.actions > 1 then
 		local co = coroutine.running()
 
