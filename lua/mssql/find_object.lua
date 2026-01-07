@@ -623,7 +623,7 @@ end
 
 ---TESTING ONLY: Cancels background jobs and wipes state.
 M.reset_all_state = function()
-	for _, entry in ipairs(global_cache) do
+	for _, entry in pairs(global_cache) do
 		if entry.cancellation_token then
 			entry.cancellation_token.cancel = true
 		end
