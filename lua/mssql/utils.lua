@@ -205,7 +205,9 @@ end
 ---@return any result
 ---@return lsp.ResponseError? error
 M.wait_for_notification_async = function(_bufnr, client, method, timeout_ms)
-	timeout_ms = timeout_ms or 10000
+	if not timeout_ms and method ~= "query/complete" then
+		timeout_ms = 10000
+	end
 	local state = require("mssql.state")
 	local co = coroutine.running()
 	local resumed = false
@@ -219,16 +221,18 @@ M.wait_for_notification_async = function(_bufnr, client, method, timeout_ms)
 		end
 	end)
 
-	vim.defer_fn(function()
-		if not resumed then
-			resumed = true
-			dispose()
-			M.try_resume(co, nil, {
-				code = -32001, -- timeout code
-				message = "Waiting for " .. method .. " timed out"
-			})
-		end
-	end, timeout_ms)
+	if timeout_ms then
+		vim.defer_fn(function()
+			if not resumed then
+				resumed = true
+				dispose()
+				M.try_resume(co, nil, {
+					code = -32001, -- timeout code
+					message = "Waiting for " .. method .. " timed out"
+				})
+			end
+		end, timeout_ms)
+	end
 
 	local result, err = coroutine.yield()
 	dispose()
