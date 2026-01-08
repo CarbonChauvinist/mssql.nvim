@@ -41,12 +41,14 @@ M.pick = function(items, opts, on_select)
 			layout = "select",
 			items = items,
 			format = function(item)
+				local meta = item.meta_info or ""
+				local label = string.format("%-30s", item.label)
 				return {
 					{ icons[item.nodeType], "SnacksPickerIcon" },
 					{ " " },
-					{ item.label },
+					{ label },
 					{ " " },
-					{ item.picker_path, "SnacksPickerComment" },
+					{ meta, "SnacksPickerComment" },
 				}
 			end,
 			actions = snacks_actions,
@@ -68,11 +70,12 @@ M.pick = function(items, opts, on_select)
 		local fzf = require("fzf-lua")
 
 		-- prepare display lines with index prefix (to map back to cache items)
-		-- Format: "1|  Tables/dbo.Car"
+        -- Format: "1|  dbo.Car                        (TestDbB | Table)"
 		local fzf_lines = {}
 		for i, item in ipairs(items) do
-			local icon = icons[item.nodeType]
-			local display = string.format("%s %s%s", icon, item.picker_path or "", item.label)
+			local icon = icons[item.nodeType] or " "
+			local meta = item.meta_info or ""
+			local display = string.format("%s %-30s \27[90m%s\27[0m", icon, item.label, meta)
 			table.insert(fzf_lines, string.format("%d| %s", i, display))
 		end
 
@@ -110,7 +113,7 @@ M.pick = function(items, opts, on_select)
 		prompt = title,
 		format_item = function(item)
 			local icon = icons[item.nodeType]
-			return string.format("%s %s%s", icon, item.picker_path or "", item.label)
+			return string.format("%s %s", icon, item.text)
 		end,
 	}, function(item)
 		vim.schedule(function()

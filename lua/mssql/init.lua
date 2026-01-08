@@ -335,7 +335,86 @@ M.find_object = function(bufnr, callback)
 	if not curr_conf then return end
 
 	utils.try_resume(coroutine.create(function()
-		local item = qm:find_async()
+		-- explicitly initialise cache for "database" scope
+		-- this ensures if we just switched databases we build a new cache
+		-- instead of showing an empty picker
+		ui.set_caching_status(true)
+		vim.cmd("redrawstatus")
+
+		local success = qm:initialise_cache_async("database")
+
+		ui.set_caching_status(false)
+		vim.cmd("redrawstatus")
+
+		if not success then
+			return
+		end
+
+		local item = qm:find_async("database")
+		if not item then return end
+
+		local buf = ui.insert_query_into_buffer(item.script)
+		if buf == 0 then buf = vim.api.nvim_get_current_buf() end
+
+		qm = state.get_query_manager(buf)
+		if not qm then return end
+
+		if curr_conf.execute_generated_select_statements and item.select then
+			ui.clear_message_buffer()
+			local result = qm:execute_async(item.script)
+			display_query_results.display_query_results(curr_conf, result)
+		end
+		if callback then callback() end
+	end))
+end
+
+---@overload fun()
+---@overload fun(callback: fun())
+---@overload fun(bufnr: integer)
+---@overload fun(bufnr: integer, callback: fun())
+---@param bufnr? integer|fun() The buffer number, OR the callback if only one argument is passed.
+---@param callback? fun() The callback to run after switching.
+M.find_object_server = function(bufnr, callback)
+	if type(bufnr) == "function" then
+		callback = bufnr
+		bufnr = nil
+	end
+	bufnr = bufnr or vim.api.nvim_get_current_buf()
+	local qm = state.get_query_manager(bufnr)
+	if not qm then return end
+
+	if qm:get_state() ~= qm.states.connected then
+		utils.log_error("You are currently " .. qm:get_state())
+		return
+	end
+
+	if qm:is_refreshing() then
+		ui.set_caching_status(true)
+		vim.cmd("redrawstatus")
+		utils.log_error("Still caching. Try again in a few seconds...")
+		return
+	end
+
+	ui.set_caching_status(false)
+	vim.cmd("redrawstatus")
+	local curr_conf = get_config_or_warn()
+	if not curr_conf then return end
+
+	utils.try_resume(coroutine.create(function()
+		ui.set_caching_status(true)
+		vim.cmd("redrawstatus")
+
+		local success = qm:initialise_cache_async("server")
+
+		ui.set_caching_status(false)
+		vim.cmd("redrawstatus")
+
+		if not success then
+			utils.log_error("Failed to load server objects.")
+			return
+		end
+
+		local item = qm:find_async("server")
 		if not item then return end
 
 		local buf = ui.insert_query_into_buffer(item.script)

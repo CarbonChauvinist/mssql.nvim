@@ -44,6 +44,11 @@ return {
 				desc = "Find",
 				icon = { icon = "", color = "green" },
 			},
+			find_object_server = {
+				"F",
+				M.find_object_server,
+				desc = "Find (Server)", icon = { icon = "", color = "green" },
+			},
 		}
 
 		local success, wk = pcall(require, "which-key")
@@ -178,6 +183,7 @@ return {
 			NewDefaultQuery = M.new_default_query,
 			SaveQueryResults = M.save_query_results,
 			Find = M.find_object,
+			FindServer = M.find_object_server,
 			CancelQuery = M.cancel_query,
 		}
 
@@ -225,6 +231,7 @@ return {
 					"BackupDatabase",
 					"RestoreDatabase",
 					"Find",
+					"FindServer",
 				}
 			elseif state == states.disconnected then
 				return {

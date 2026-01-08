@@ -79,12 +79,19 @@ local BUILTIN_ACTIONS = {
 	}
 }
 
---- Generates a consistent cache key
+--- Generates a consistent cache key.
+--- For 'server' scope, strip the specific database name so the cache is shared
+--- across all DBs on the same server instance.
 ---@param opts MssqlConnectionOptions
+---@param scope string
 ---@return string
-local function get_cache_key(opts)
+local function get_cache_key(opts, scope)
 	local key_opts = vim.deepcopy(opts)
-	return vim.json.encode(key_opts)
+	if scope == "server" then
+		key_opts.database = nil
+		key_opts.DatabaseDisplayName = nil
+	end
+	return vim.json.encode(key_opts) .. "|" .. scope
 end
 
 ---Resolves a user config entry (string or table) to an internal action definition
@@ -235,18 +242,37 @@ end
 
 ---@param lsp_client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
----@param cancellation_token { cancel: boolean, cleanup_callback: function }
----@param timeout_ms? integer Optional timeout in milliseconds (default: 10000)
+---@param cancellation_token { cancel: boolean }
+---@param scope string? Optional ("server" | "database"). Defaults to "database".
+---@param timeout_ms integer? Optional timeout in milliseconds (default: 10000)
 ---@return MssqlNode[] | boolean? result Returns false or nil on failure/timeout
 ---@return string? msg
-local get_object_cache_async = function(lsp_client, connection_options, cancellation_token, timeout_ms)
+local get_object_cache_async = function(lsp_client, connection_options, cancellation_token, scope, timeout_ms)
+
+	if not scope or type(scope) ~= "string" or (scope ~= "database" and scope ~= "server") then
+		scope = "database"
+	end
+
+	local allow_list = connection_options and connection_options.databaseAllowList
+	local deny_list = connection_options and connection_options.databaseDenyList
+
     utils.wait_for_schedule_async()
     if type(timeout_ms) ~= "number" or timeout_ms <= 0 then
         timeout_ms = 10000
     end
 	local start_time = vim.uv.hrtime()
 	state.on_event("objectexplorer/expandcompleted", main_expand_handler, "mssql_find_object_global")
-    local session, err = get_session_async(lsp_client, connection_options, timeout_ms, cancellation_token)
+
+	-- prepare session options
+	-- if scope is 'server', we MUST NOT bind the Object Explorer session to the specific database
+	-- we need to connect to the server Root (default/master) to see the "Databases" folder
+	-- and navigate to siblings
+	local session_opts = vim.deepcopy(connection_options)
+	if scope == "server" then
+		session_opts.database = nil
+		session_opts.DatabaseDisplayName = nil
+	end
+    local session, err = get_session_async(lsp_client, session_opts, timeout_ms)
 
     if not session or not session.sessionId or not session.rootNode then
         return nil, err or "Session creation failed or returned invalid data (missing rootNode)"
@@ -269,99 +295,133 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
     local co = coroutine.running()
 	local timeout_timer
 
-    -- (Server Root -> Database) traversal
-    local db_node_path = session.target_path or root_path
+	-- setup traversal paths
+	-- Note: session.target_path might be nil if we connected to Root (server scope)
     local target_database_name = connection_options.database
-    local found_db_node = false
+
+	-- if session root is already the database (DB scope), mark it found immediately
+	-- if we are in Server scope (Root), this will be false, and we will find DBs via expansion
+    local found_db_node = (session.rootNode.objectType == "Database")
+	if found_db_node then
+		db_node_path = root_path
+	end
 	local expand
 
-    local clean_up_and_return = function(return_value, cleanup_err)
-		if timeout_timer then
-			local timer_to_close = timeout_timer
+	local clean_up_and_return = function(return_value, cleanup_err)
+		if timeout_timer and not timeout_timer:is_closing() then
+			timeout_timer:close()
 			timeout_timer = nil
-			if not timer_to_close:is_closing() then
-				timer_to_close:close()
-			end
 		end
 
-        if session_id then
+		if session_id then
 				active_sessions[session_id] = nil
-        end
+		end
 
-        ---@diagnostic disable-next-line: param-type-mismatch
-        lsp_client:request("objectexplorer/closeSession", {
-            sessionId = session_id,
-        }, function(close_err, result, _, _)
-            session_id = nil
-            return result, close_err
-        end)
+		if session_id then
+			---@diagnostic disable-next-line: param-type-mismatch
+			lsp_client:request("objectexplorer/closeSession", {
+				sessionId = session_id,
+			}, function(close_err, result, _, _)
+				session_id = nil
+				return result, close_err
+			end)
+		end
 
         if coroutine.status(co) == "suspended" then
+			local ok, resume_err
             if cleanup_err then
-                local ok, resume_err = coroutine.resume(co, nil, cleanup_err)
-                if not ok then
-                    utils.log_error("Failed to resume coroutine: " .. tostring(resume_err))
-                end
+                ok, resume_err = coroutine.resume(co, nil, cleanup_err)
             else
-                coroutine.resume(co, return_value)
+                ok, resume_err = coroutine.resume(co, return_value)
             end
+
+			if not ok then
+				utils.log_error("Failed to resume coroutine: " .. tostring(resume_err))
+			end
         end
     end
 
-	-- attach cleanup trigger to token so can abort from outside
-	cancellation_token.cleanup_callback = function()
-		clean_up_and_return(nil, "Cancelled by user/cleanup")
-	end
+	local on_expand_result = function(_, expand_result, _)
+		local nodes = (type(expand_result) == "table" and expand_result.nodes) or {}
 
-    local on_expand_result = function(_, expand_result, _)
-		-- ignore boolean acks or empty results
-		if type(expand_result) ~= "table" or not expand_result.nodes then
-			return
+		for _, node in ipairs(nodes) do
+			-- capture: add valid objects (Tables, Views, SProcs) to cache
+			if OBJECT_TYPE_MAP[node.objectType] then
+				local path = node.parentNodePath
+
+				-- filter our system schemas present in every db
+				local schema = node.metadata and node.metadata.schema
+				if schema == "sys" or schema == "INFORMATION_SCHEMA" then
+					goto continue
+				end
+
+				-- filter out junk paths
+				if not vim.startswith(path, root_path) then
+					goto continue
+				end
+
+				-- extract database name from URN
+				local db_name = "UNKNOWN"
+				if node.metadata and node.metadata.urn then
+					db_name = node.metadata.urn:match("Database%[@Name='([^']+)']") or db_name
+				end
+				node.db_name = db_name
+				node.meta_info = string.format("(%s | %s)", db_name, node.objectType)
+
+				-- fallback pre-formatted text (for vim.ui.select)
+				-- FORMAT: "dbo.Car    (TestDbB | Table)"
+				-- "[icon] schema.object_name    (database | objectType)"
+				node.text = string.format("%-30s (%s | %s)", node.label, db_name, node.objectType)
+				table.insert(cache, node)
+
+				-- navigation: what to expand next
+			elseif node.nodePath then
+				local should_expand = false
+				local is_db = (node.objectType == "Database")
+				local is_nav_folder = (node.label == "Databases" or node.label == "System Databases")
+
+				if is_nav_folder then
+					-- always traverse structure folders
+					should_expand = true
+
+				elseif is_db then
+					local allowed = #utils.filter_list({node.label}, allow_list, deny_list) > 0
+
+					if allowed then
+						if scope == "server" then
+							-- expand all allowed databases
+							should_expand = true
+							found_db_node = true
+						elseif target_database_name and node.label:lower() == target_database_name:lower() then
+							-- only expand target database when in DB scope
+							should_expand = true
+							found_db_node = true
+						end
+					end
+
+				elseif found_db_node or scope == "server" then
+					-- these are child folders (e.g. "Tables", "Views") inside a Database
+					-- if we're here, we are either in Server scope (expand everything we find)
+					-- OR in DB scope and strictly inside the 'found' DB
+					should_expand = true
+				end
+
+				if should_expand then
+					expand(node.nodePath)
+				end
+			end
+			::continue::
 		end
 
-        for _, node in ipairs(expand_result.nodes) do
-            if OBJECT_TYPE_MAP[node.objectType] then
-                local path = node.parentNodePath
-
-                if not vim.startswith(path, db_node_path) then
-                    goto continue
-                end
-
-                local root_path_length = #db_node_path
-                node.picker_path = string.sub(path, root_path_length + 2, #path) .. "/"
-                node.text = node.picker_path .. node.label
-                table.insert(cache, node)
-
-            elseif not node.nodePath then
-                utils.log_info("no node path")
-            elseif session.target_path and not found_db_node then
-                if target_database_name and node.label:lower() == target_database_name:lower() and node.objectType == "Database" then
-                    found_db_node = true
-                    db_node_path = node.nodePath
-                    expand(db_node_path)
-
-                elseif (node.label:lower() == "databases" or node.label:lower() == "system databases") then
-                    expand(node.nodePath)
-                end
-
-            elseif found_db_node or not session.target_path then
-                local current_base = found_db_node and db_node_path or root_path
-                if vim.startswith(node.nodePath, current_base) then
-                    expand(node.nodePath)
-                end
-            end
-            ::continue::
-        end
-
-        expand_count = expand_count - 1
-        if expand_count == 0 then
-            if not session.target_path or found_db_node then
-                clean_up_and_return(cache)
-            else
-                clean_up_and_return(false)
-            end
-        end
-    end
+		expand_count = expand_count - 1
+		if expand_count == 0 then
+			if not session.target_path or found_db_node then
+				clean_up_and_return(cache)
+			else
+				clean_up_and_return(false)
+			end
+		end
+	end
 
     expand = function(path)
         expand_count = expand_count + 1
@@ -406,11 +466,15 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
         active_sessions[session_id] = on_expand_result
     end
 
+	-- since it takes time to create the session
+	-- give expansion phase own clean timer, or remaining time
+	local expansion_timeout = math.max(remaining_ms, 5000)
+
     timeout_timer = vim.defer_fn(function()
         if coroutine.status(co) == "suspended" then
             clean_up_and_return(nil, "Operation timed out waiting for object explorer expansion")
         end
-    end, math.floor(remaining_ms))
+    end, math.floor(expansion_timeout))
 
     expand(session.rootNode.nodePath)
     local result, cr_err = coroutine.yield()
@@ -499,26 +563,32 @@ end
 -- If force is true, then gets a new cache and overwrites
 ---@param lsp_client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
+---@param scope? string
 ---@param force? boolean
----@param timeout_ms? integer Optional timeout in milliseconds (default: 10000)
+---@param timeout_ms? integer Optional timeout in milliseconds (default: 30000 if server, 10000 if database)
 ---@return boolean success
-M.initialise_cache_async = function(lsp_client, connection_options, force, timeout_ms)
-	if type(timeout_ms) ~= "number" or timeout_ms <= 0 then
-		timeout_ms = 10000
+M.initialise_cache_async = function(lsp_client, connection_options, scope, force, timeout_ms)
+	if not scope or type(scope) ~= "string" or (scope ~= "server" and scope ~= "database") then
+		scope = "database"
 	end
+
+	if not timeout_ms or type(timeout_ms) ~= "number" or timeout_ms <= 0 then
+		timeout_ms = (scope == "server") and 30000 or 10000
+	end
+
 
 	if type(force) ~= "boolean" or not force then
 		force = false
 	end
 
-	local key = vim.json.encode(connection_options) --[[@as ConnectionKey]]
+	local key = get_cache_key(connection_options, scope) --[[@as ConnectionKey]]
 	if not global_cache[key] then
 		global_cache[key] = {}
 	end
 
 	-- don't refresh if we are already refreshing or have refreshed previously
 	if (global_cache[key].cache or M.is_refreshing(key)) and not force then
-		return false
+		return true
 	end
 
 	-- cancel any currently running
@@ -529,7 +599,7 @@ M.initialise_cache_async = function(lsp_client, connection_options, force, timeo
 
 	global_cache[key].refresh_coroutine = coroutine.running()
 	vim.cmd("redrawstatus")
-	local new_cache, err = get_object_cache_async(lsp_client, connection_options, cancellation_token, timeout_ms)
+	local new_cache, err = get_object_cache_async(lsp_client, connection_options, cancellation_token, scope, timeout_ms)
 	if err then
 		if not err:match("Cancelled") then
 			utils.log_warn("Cache initialization failed " .. tostring(err))
@@ -545,14 +615,19 @@ end
 
 ---@param connection_options MssqlConnectionOptions
 ---@param lsp_client vim.lsp.Client
+---@param scope string? Optional scope ("server" | "database"). Defaults to "database".
 ---@return { script: string, select: boolean }?
-M.find_async = function(connection_options, lsp_client)
+M.find_async = function(connection_options, lsp_client, scope)
 	local title = "Find"
 	if connection_options and connection_options.database and connection_options.server then
 		title = connection_options.server .. " | " .. connection_options.database
 	end
 
-	local key = vim.json.encode(connection_options)
+	if not scope or type(scope) ~= "string" or (scope ~= "server" and scope ~= "database") then
+		scope = "database"
+	end
+
+	local key = get_cache_key(connection_options, scope) --[[@as ConnectionKey]]
 	---@type MssqlNode[]
 	local cache = (global_cache[key] and global_cache[key].cache) or {}
 

@@ -210,7 +210,7 @@
 ---@field last_execution fun(self: MssqlQueryManager): MssqlExecutionInfo
 ---@field update_connection_params fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult): boolean
 ---@field connectionchanged_async fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult)
----@field initialise_cache_async fun(self: MssqlQueryManager, force?: boolean): boolean
+---@field initialise_cache_async fun(self: MssqlQueryManager, scope: string, force?: boolean): boolean
 ---@field find_async fun(self: MssqlQueryManager): {script: string, select: boolean }?
 ---@field is_refreshing fun(self: MssqlQueryManager): boolean?
 ---@field handle_query_complete fun(self: MssqlQueryManager, result: MssqlQueryExecuteSubsetResult)

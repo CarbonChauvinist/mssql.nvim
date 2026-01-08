@@ -48,9 +48,9 @@ return {
 		}
 
 		local opts = { server = "S", database = "D" }
-		local cache_key = vim.json.encode(opts)
+		local cache_key = vim.json.encode(opts) .. "|" .. "database"
 
-		local success1 = finder.initialise_cache_async(mock_client, opts, true)
+		local success1 = finder.initialise_cache_async(mock_client, opts, nil, true)
 		assert(success1, "First refresh should succeed")
 
 		local found1 = test_utils.wait_for_cache_content("Table1", {
@@ -64,7 +64,7 @@ return {
 
 		-- run 2 if duplicate listeners bug exists this will cause two listeners
 		-- to fire on the single event, pushing "Table1" into the cache twice
-		local success2 = finder.initialise_cache_async(mock_client, opts, true)
+		local success2 = finder.initialise_cache_async(mock_client, opts, nil, true)
 		assert(success2, "Second refresh command started successfully")
 
 		local found2 = test_utils.wait_for_cache_content("Table1", {

@@ -469,24 +469,36 @@ end
 -- Passthroughs to Finder (passing client/params explicility)
 
 --- Initialize cache for finder
+---@param scope string? Optional ("server" | "database"). Defaults to "database".
 ---@param force boolean? Get a new cache and overwrite.
 ---@return boolean success
-function MssqlQueryManager:initialise_cache_async(force)
+function MssqlQueryManager:initialise_cache_async(scope, force)
+	if not scope or (scope ~= "server" and scope ~= "database") then
+		scope = "database"
+	end
+
 	local options = self:get_connection_options()
 	if not options then
 		utils.log_warn("Cannot initialize cache: not connected")
 		return false
 	end
 
+	local timeout = (scope == "server") and 30000 or nil
 	return finder.initialise_cache_async(
 		self.client,
 		self.last_connect_params.connection.options,
-		force
+		scope,
+		force,
+		timeout
 	)
 end
 
+---@param scope string? Optional ("server" | "database"). Defaults to database.
 ---@return { script: string, select: boolean }?
-function MssqlQueryManager:find_async()
+function MssqlQueryManager:find_async(scope)
+	if not scope or (scope ~= "server" and scope ~= "database") then
+		scope = "database"
+	end
 	local options = self:get_connection_options()
 	if not options then
 		utils.log_warn("Cannot find objects: not connected")
@@ -495,7 +507,8 @@ function MssqlQueryManager:find_async()
 
 	return finder.find_async(
 		self.last_connect_params.connection.options,
-		self.client
+		self.client,
+		scope
 	)
 end
 

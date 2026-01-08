@@ -503,6 +503,7 @@ M.test_scaffold = function(opts)
 	if not qm then
 		error("Query manager not found on buffer.")
 	end
+	qm:initialise_cache_async("database", true)
 
 	return buf, client, qm, cleanup
 end
@@ -546,13 +547,20 @@ M.wait_for_cache_content = function(item_label, opts)
 			return false
 		end
 
+		-- reset debug info for this poll cycle
+		cache_info.size = 0
+		cache_info.items = {}
+
 		for _, connection_data in pairs(global_cache) do
 			local cache = connection_data.cache
 			if cache then
-				cache_info.size = #cache
-				cache_info.items = cache
+				-- accumulate size across all scopes/keys
+				cache_info.size = cache_info.size + #cache
 
 				for _, item in ipairs(cache) do
+					if opts.debug then
+						table.insert(cache_info.items, item)
+					end
 					local name_match = item.label == item_label or (item.text and item.text:find(item_label, 1, true))
 
 					if name_match then
@@ -589,7 +597,11 @@ M.wait_for_cache_content = function(item_label, opts)
 				local type_str = item.objectType or item.nodeType or "?"
 				table.insert(debug_dump, string.format("%s [%s]", item.label, type_str))
 			end
-			table.insert(msg, string.format("First %d items: %s", #debug_dump, table.concat(debug_dump, ", ")))
+			if #debug_dump > 0 then
+				table.insert(msg, string.format("First %d items: %s", #debug_dump, table.concat(debug_dump, ", ")))
+			else
+				table.insert(msg, "Cache is empty.")
+			end
 		end
 
 		if #cache_info.seen_types > 0 then
