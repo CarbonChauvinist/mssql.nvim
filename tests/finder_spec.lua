@@ -20,7 +20,13 @@ end
 return {
 	test_name = "Finder integration: script generation",
 	run_test_async = function()
-		local buf, _, _, cleanup = test_utils.test_scaffold({ target_db = "TestDbB" })
+		local buf, _, qm, cleanup = test_utils.test_scaffold({ target_db = "TestDbB" })
+		local status, _ = pcall(test_utils.wait_for_cache_content, "dbo.Car", { type = "Table", timeout = 15000})
+		if not status then
+			print("    [INFO] Cache cold/empty. Retrying initialization...")
+			qm:initialise_cache_async("database", true)
+			test_utils.wait_for_cache_content("dbo.Car", { type = "Table", timeout = 30000 })
+		end
 		test_utils.wait_for_cache_content("dbo.Car", { type = "Table" })
 
 		-- mock select

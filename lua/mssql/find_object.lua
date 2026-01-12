@@ -253,8 +253,8 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 		scope = "database"
 	end
 
-	local allow_list = connection_options and connection_options.databaseAllowList
-	local deny_list = connection_options and connection_options.databaseDenyList
+	local db_allow_list = connection_options and connection_options.databaseAllowList
+	local db_deny_list = connection_options and connection_options.databaseDenyList
 
     utils.wait_for_schedule_async()
     if type(timeout_ms) ~= "number" or timeout_ms <= 0 then
@@ -289,7 +289,6 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 
     ---@type string?
     local session_id = session.sessionId
-    local root_path = session.rootNode.nodePath
     local cache = {}
     local expand_count = 0
     local co = coroutine.running()
@@ -302,9 +301,6 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 	-- if session root is already the database (DB scope), mark it found immediately
 	-- if we are in Server scope (Root), this will be false, and we will find DBs via expansion
     local found_db_node = (session.rootNode.objectType == "Database")
-	if found_db_node then
-		db_node_path = root_path
-	end
 	local expand
 
 	local clean_up_and_return = function(return_value, cleanup_err)
@@ -346,19 +342,16 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 
 		for _, node in ipairs(nodes) do
 			-- capture: add valid objects (Tables, Views, SProcs) to cache
-			if OBJECT_TYPE_MAP[node.objectType] then
-				local path = node.parentNodePath
+			local type_key = OBJECT_TYPE_MAP[node.objectType]
 
+			if type_key then
 				-- filter our system schemas present in every db
-				local schema = node.metadata and node.metadata.schema
+				local schema = node.metadata and node.metadata.schema or ""
 				if schema == "sys" or schema == "INFORMATION_SCHEMA" then
 					goto continue
 				end
-
-				-- filter out junk paths
-				if not vim.startswith(path, root_path) then
-					goto continue
-				end
+				local name = node.metadata and node.metadata.name or ""
+				local full_name = schema .. "." .. name
 
 				-- extract database name from URN
 				local db_name = "UNKNOWN"
@@ -372,20 +365,41 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 				-- FORMAT: "dbo.Car    (TestDbB | Table)"
 				-- "[icon] schema.object_name    (database | objectType)"
 				node.text = string.format("%-30s (%s | %s)", node.label, db_name, node.objectType)
-				table.insert(cache, node)
+
+				local filters =	connection_options.objectFilters and connection_options.objectFilters[type_key]
+				local allowed = true
+
+				if filters then
+					local result = utils.filter_list({ full_name }, filters.allow, filters.deny)
+					if #result == 0 then
+						allowed = false
+					end
+				end
+				if allowed then
+					table.insert(cache, node)
+				end
 
 				-- navigation: what to expand next
 			elseif node.nodePath then
 				local should_expand = false
 				local is_db = (node.objectType == "Database")
+				local is_db_structure = (
+				  node.objectType == "Tables"
+				  or node.objectType == "Views"
+				  or node.objectType == "StoredProcedures"
+				  or node.objectType == "Functions"
+				)
 				local is_nav_folder = (node.label == "Databases" or node.label == "System Databases")
 
 				if is_nav_folder then
 					-- always traverse structure folders
 					should_expand = true
 
+				elseif is_db_structure and scope == "database" then
+					should_expand = true
+
 				elseif is_db then
-					local allowed = #utils.filter_list({node.label}, allow_list, deny_list) > 0
+					local allowed = #utils.filter_list({node.label}, db_allow_list, db_deny_list) > 0
 
 					if allowed then
 						if scope == "server" then
@@ -436,7 +450,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
             local status, _request_id = lsp_client:request("objectexplorer/expand", {
                 sessionId = session_id,
                 nodePath = path,
-            }, function(expand_err, result)
+            }, function(expand_err, _)
                 if expand_err then
                     utils.log_warn("Expand request failed for " .. path .. ": " .. (expand_err.message or "unknown error"))
 
@@ -451,9 +465,6 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
                     return
                 end
 
-                if result then
-					on_expand_result(nil, result, { client_id = lsp_client.id })
-                end
             end)
 
             if not status then
@@ -475,6 +486,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
             clean_up_and_return(nil, "Operation timed out waiting for object explorer expansion")
         end
     end, math.floor(expansion_timeout))
+
 
     expand(session.rootNode.nodePath)
     local result, cr_err = coroutine.yield()
