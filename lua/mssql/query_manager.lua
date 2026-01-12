@@ -564,7 +564,8 @@ function MssqlQueryManager:cleanup()
 
 	local opts = self:get_connection_options()
 	if opts then
-		finder.cancel_refresh(opts)
+		finder.cancel_refresh(opts, "database")
+		finder.cancel_refresh(opts, "server")
 	end
 
 	self.state = MssqlQueryManager.states.disconnected

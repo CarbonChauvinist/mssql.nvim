@@ -48,9 +48,8 @@ return {
 		}
 
 		local opts = { server = "S", database = "D" }
-		local cache_key = vim.json.encode(opts) .. "|" .. "database"
 
-		local success1 = finder.initialise_cache_async(mock_client, opts, nil, true)
+		local success1 = finder.initialise_cache_async(mock_client, opts, "database", true)
 		assert(success1, "First refresh should succeed")
 
 		local found1 = test_utils.wait_for_cache_content("Table1", {
@@ -59,12 +58,20 @@ return {
 		})
 		assert(found1, "Run 1: Timed out waiting for 'Table1' in cache")
 
-		local entry1 = finder.get_cache()[cache_key]
-		assert(#entry1.cache == 1, "Run 1: Expected 1 item, got " .. #entry1.cache)
+		local cache = finder.get_cache()
+		local targeted_cache
+		for k, v in pairs(cache) do
+			if k:find('"server":"S"') and k:find('"database":"D"') then
+				targeted_cache = v
+				break
+			end
+		end
+
+		assert(#targeted_cache.cache == 1, "Run 1: Expected 1 item, got " .. #targeted_cache.cache)
 
 		-- run 2 if duplicate listeners bug exists this will cause two listeners
 		-- to fire on the single event, pushing "Table1" into the cache twice
-		local success2 = finder.initialise_cache_async(mock_client, opts, nil, true)
+		local success2 = finder.initialise_cache_async(mock_client, opts, "database", true)
 		assert(success2, "Second refresh command started successfully")
 
 		local found2 = test_utils.wait_for_cache_content("Table1", {
@@ -73,7 +80,6 @@ return {
 		})
 		assert(found2, "Run 2: Timed out waiting for 'Table1'")
 
-		local entry2 = finder.get_cache()[cache_key]
-		assert(#entry2.cache == 1, "Run 2: Expected exactly 1 item, got " .. #entry2.cache .. ". Duplicate listeners detected!")
+		assert(#targeted_cache.cache == 1, "Run 2: Expected exactly 1 item, got " .. #targeted_cache.cache .. ". Duplicate listeners detected!")
 	end,
 }

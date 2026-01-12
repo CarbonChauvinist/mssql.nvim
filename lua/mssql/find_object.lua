@@ -242,7 +242,7 @@ end
 
 ---@param lsp_client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
----@param cancellation_token { cancel: boolean }
+---@param cancellation_token { cancel: boolean, cleanup_callback: function }
 ---@param scope string? Optional ("server" | "database"). Defaults to "database".
 ---@param timeout_ms integer? Optional timeout in milliseconds (default: 10000)
 ---@return MssqlNode[] | boolean? result Returns false or nil on failure/timeout
@@ -272,7 +272,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 		session_opts.database = nil
 		session_opts.DatabaseDisplayName = nil
 	end
-    local session, err = get_session_async(lsp_client, session_opts, timeout_ms)
+    local session, err = get_session_async(lsp_client, session_opts, timeout_ms, cancellation_token)
 
     if not session or not session.sessionId or not session.rootNode then
         return nil, err or "Session creation failed or returned invalid data (missing rootNode)"
@@ -335,7 +335,13 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 				utils.log_error("Failed to resume coroutine: " .. tostring(resume_err))
 			end
         end
+
     end
+
+	-- attach cleanup trigger to token so we can abort from outside
+	cancellation_token.cleanup_callback = function()
+		clean_up_and_return(nil, "Cancelled by user/cleanup")
+	end
 
 	local on_expand_result = function(_, expand_result, _)
 		local nodes = (type(expand_result) == "table" and expand_result.nodes) or {}
@@ -604,7 +610,7 @@ M.initialise_cache_async = function(lsp_client, connection_options, scope, force
 	end
 
 	-- cancel any currently running
-	M.cancel_refresh(connection_options)
+	M.cancel_refresh(connection_options, scope)
 
 	local cancellation_token = { cancel = false }
 	global_cache[key].cancellation_token = cancellation_token
@@ -614,7 +620,7 @@ M.initialise_cache_async = function(lsp_client, connection_options, scope, force
 	local new_cache, err = get_object_cache_async(lsp_client, connection_options, cancellation_token, scope, timeout_ms)
 	if err then
 		if not err:match("Cancelled") then
-			utils.log_warn("Cache initialization failed " .. tostring(err))
+			utils.log_warn("Cache initialization failed: " .. tostring(err))
 		end
 		return false
 	end
@@ -741,8 +747,10 @@ M.get_cache = function()
 end
 
 ---@param connection_options MssqlConnectionOptions
-M.cancel_refresh = function(connection_options)
-	local key = get_cache_key(connection_options)
+---@param scope string?
+M.cancel_refresh = function(connection_options, scope)
+	if not scope then scope = "database" end
+	local key = get_cache_key(connection_options, scope)
 
 	if global_cache[key] and global_cache[key].cancellation_token then
 		local token = global_cache[key].cancellation_token
