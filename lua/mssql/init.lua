@@ -30,9 +30,10 @@ local function get_config_or_warn()
 end
 
 -- Asynchronous setup logic (downloading tools, etc.)
----@param opts? MssqlConfig
-local function setup_async(opts)
-	opts = vim.tbl_deep_extend("keep", opts or {}, default_opts)
+---@param user_opts? MssqlConfig
+local function setup_async(user_opts)
+	---@type MssqlOptions
+	local opts = vim.tbl_deep_extend("keep", user_opts or {}, default_opts) --[[@as MssqlOptions]]
 
     -- ensure that we use user's custom icons if configured, but validate are only single character
     if opts.icons then
@@ -57,8 +58,6 @@ local function setup_async(opts)
 	end
 
 	opts.connections_file = opts.connections_file or joinpath(opts.data_dir, "connections.json")
-
-	---@cast opts MssqlOptions
 
 	state.set_config(opts)
 	ui.set_show_results_option(opts)
@@ -337,8 +336,14 @@ M.find_object = function(bufnr, callback)
 
 		if curr_conf.execute_generated_select_statements and item.select then
 			ui.clear_message_buffer()
-			local result = qm:execute_async(item.script)
-			display_query_results.display_query_results(curr_conf, result)
+			local result, err = qm:execute_async(item.script)
+
+			if result then
+				display_query_results.display_query_results(curr_conf, result)
+			elseif err then
+				utils.log_error("Failed to execute generated SELECT: " .. err)
+			end
+
 		end
 		if callback then callback() end
 	end))

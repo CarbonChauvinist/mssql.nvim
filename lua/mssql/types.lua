@@ -92,10 +92,12 @@
 ---@field find_object_actions table<string, NodeActionConfig>? Configuration for object actions (Table, View, etc)
 
 ---@class MssqlOptions : MssqlConfig
+---@field keymap_prefix string
 ---@field open_results_in ("split"|"vsplit"|"current_window"|fun(bufnr: integer))
 ---@field view_messages_in ("notification"|"buffer"|fun(msg: string, is_error: boolean))
 ---@field max_rows integer
 ---@field max_column_width integer
+---@field query_timeout integer?
 ---@field auto_connect_on_rename boolean
 ---@field execute_generated_select_statements boolean
 ---@field lsp_settings table
@@ -187,6 +189,34 @@
 ---@field last_execution_info MssqlExecutionInfo
 ---@field start_time number
 ---@field query_timeout number?
+---@field get_owner_uri fun(self: MssqlQueryManager): string
+---@field get_database_name fun(self: MssqlQueryManager): string?
+---@field set_state fun(self: MssqlQueryManager, new_state: MssqlQueryManagerState): boolean
+---@field get_state fun(self: MssqlQueryManager): MssqlQueryManagerState
+---@field cleanup_timer fun(self: MssqlQueryManager)
+---@field stop_execution_timer fun(self: MssqlQueryManager)
+---@field start_execution_timer fun(self: MssqlQueryManager): boolean
+---@field connect_async fun(self: MssqlQueryManager, connect_params: MssqlConnectParams): boolean, string?
+---@field disconnect_async fun(self: MssqlQueryManager): boolean
+---@field execute_async fun(self: MssqlQueryManager, query: string): MssqlQueryExecuteSubsetResult?, string?
+---@field wait_for_query_completion fun(self: MssqlQueryManager): MssqlQueryExecuteSubsetResult?, string?
+---@field handle_timeout fun(self: MssqlQueryManager, timeout_ms?: integer): string
+---@field cancel_async fun(self: MssqlQueryManager): boolean
+---@field parse_rows_affected_message fun(self: MssqlQueryManager, message: string): integer?
+---@field set_final_execution_stats fun(self: MssqlQueryManager, final_time?: number, select_row_count?:number)
+---@field get_connect_params fun(self: MssqlQueryManager): MssqlConnectParams?
+---@field get_connection_options fun(self: MssqlQueryManager): MssqlConnectionOptions?
+---@field get_lsp_client fun(self: MssqlQueryManager): vim.lsp.Client
+---@field last_execution fun(self: MssqlQueryManager): MssqlExecutionInfo
+---@field update_connection_params fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult): boolean
+---@field connectionchanged_async fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult)
+---@field initialise_cache_async fun(self: MssqlQueryManager, force?: boolean): boolean
+---@field find_async fun(self: MssqlQueryManager): {script: string, select: boolean }?
+---@field is_refreshing fun(self: MssqlQueryManager): boolean?
+---@field handle_query_complete fun(self: MssqlQueryManager, result: MssqlQueryExecuteSubsetResult)
+---@field handle_query_message fun(self: MssqlQueryManager, result: MssqlQueryMessageResult)
+---@field cleanup fun(self: MssqlQueryManager)
+---@field is_valid fun(self: MssqlQueryManager): boolean
 
 ---@class MssqlQueryManagerStates
 ---@field disconnected MssqlQueryManagerState

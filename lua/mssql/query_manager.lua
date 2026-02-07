@@ -274,7 +274,7 @@ end
 
 --- Executes an SQL query string.
 ---@param query string
----@return table? result The query result object.
+---@return MssqlQueryExecuteSubsetResult? result The query result object.
 ---@return string? error_message
 function MssqlQueryManager:execute_async(query)
 	if not self:is_valid() then return nil, "Object is invalid." end
@@ -301,7 +301,7 @@ function MssqlQueryManager:execute_async(query)
 end
 
 --- Internal helper to wait for completion notification.
----@return table? result
+---@return MssqlQueryExecuteSubsetResult? result
 ---@return string? error_message
 function MssqlQueryManager:wait_for_query_completion()
 	local timeout_ms = calculate_timeout_ms(self.query_timeout)
@@ -509,7 +509,7 @@ end
 
 --- Handlers (called by LSP callbacks)
 
----@param result table
+---@param result MssqlQueryExecuteSubsetResult
 function MssqlQueryManager:handle_query_complete(result)
 	if not is_valid_query_complete_result(result) then
 		utils.log_warn("Invalid query complete result received")
