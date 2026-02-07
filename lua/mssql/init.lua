@@ -139,6 +139,16 @@ end
 M.connect = function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 
+	if vim.api.nvim_buf_get_name(bufnr) == "" and vim.api.nvim_get_option_value("ft", {buf = bufnr}) == "sql" then
+		vim.cmd("file " .. "untitled-" .. bufnr .. ".sql")
+		local clients = vim.lsp.get_clients({ bufnr = bufnr, name = "mssql_ls" })
+		for _, client in ipairs(clients) do
+			client:stop()
+		end
+		vim.cmd("doautocmd FileType")
+		_ = lsp.wait_for_attach(bufnr)
+	end
+
 	local qm = state.get_query_manager(bufnr)
 	local curr_conf = get_config_or_warn()
 	if not curr_conf then return end
