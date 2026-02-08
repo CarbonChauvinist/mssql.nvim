@@ -47,7 +47,9 @@ end
 ---@param bufnr? integer
 ---@return MssqlQueryManager?
 M.get_query_manager = function(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
+	if not bufnr or bufnr == 0 then
+		bufnr = vim.api.nvim_get_current_buf()
+	end
 	return query_managers[bufnr]
 end
 
