@@ -79,6 +79,14 @@ local BUILTIN_ACTIONS = {
 	}
 }
 
+--- Generates a consistent cache key
+---@param opts MssqlConnectionOptions
+---@return string
+local function get_cache_key(opts)
+	local key_opts = vim.deepcopy(opts)
+	return vim.json.encode(key_opts)
+end
+
 ---Resolves a user config entry (string or table) to an internal action definition
 ---@param user_entry MssqlActionId|MssqlActionEntry
 ---@return MssqlResolvedAction?
@@ -97,9 +105,10 @@ end
 ---@param client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
 ---@param timeout_ms? integer Optional timeout in milliseconds (default: 10000)
+---@param cancellation_token? { cancel: boolean, cleanup_callback: function }
 ---@return MssqlSession? | boolean?
 ---@return string? msg
-local get_session_async = function(client, connection_options, timeout_ms)
+local get_session_async = function(client, connection_options, timeout_ms, cancellation_token)
 	if type(timeout_ms) ~= "number" or timeout_ms <= 0 then
 		timeout_ms = 10000
 	end
@@ -118,8 +127,13 @@ local get_session_async = function(client, connection_options, timeout_ms)
 	local resumed = false
 	local timeout_timer
 
+	if cancellation_token and cancellation_token.cancel then
+		return nil, "Cancelled"
+	end
+
 	-- setup event listener
-	local dispose = state.on_event("objectexplorer/sessioncreated", function(err, result, ctx)
+	local dispose
+	dispose = state.on_event("objectexplorer/sessioncreated", function(err, result, ctx)
 		if ctx and ctx.client_id == client.id then
 			if not resumed and result and result.rootNode then
 				resumed = true
@@ -127,6 +141,18 @@ local get_session_async = function(client, connection_options, timeout_ms)
 			end
 		end
 	end)
+
+	-- attach cancellation handler for duration of this call
+	if cancellation_token then
+		cancellation_token.cleanup_callback = function()
+			if not resumed then
+				resumed = true
+				if dispose then dispose() end
+				if timeout_timer then timeout_timer:close() end
+				utils.try_resume(co, nil, "Cancelled")
+			end
+		end
+	end
 
 	-- send request
 	---@diagnostic disable-next-line: param-type-mismatch
@@ -209,7 +235,7 @@ end
 
 ---@param lsp_client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
----@param cancellation_token { cancel: boolean }
+---@param cancellation_token { cancel: boolean, cleanup_callback: function }
 ---@param timeout_ms? integer Optional timeout in milliseconds (default: 10000)
 ---@return MssqlNode[] | boolean? result Returns false or nil on failure/timeout
 ---@return string? msg
@@ -220,7 +246,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
     end
 	local start_time = vim.uv.hrtime()
 	state.on_event("objectexplorer/expandcompleted", main_expand_handler, "mssql_find_object_global")
-    local session, err = get_session_async(lsp_client, connection_options, timeout_ms)
+    local session, err = get_session_async(lsp_client, connection_options, timeout_ms, cancellation_token)
 
     if not session or not session.sessionId or not session.rootNode then
         return nil, err or "Session creation failed or returned invalid data (missing rootNode)"
@@ -281,6 +307,11 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
             end
         end
     end
+
+	-- attach cleanup trigger to token so can abort from outside
+	cancellation_token.cleanup_callback = function()
+		clean_up_and_return(nil, "Cancelled by user/cleanup")
+	end
 
     local on_expand_result = function(_, expand_result, _)
 		-- ignore boolean acks or empty results
@@ -491,9 +522,8 @@ M.initialise_cache_async = function(lsp_client, connection_options, force, timeo
 	end
 
 	-- cancel any currently running
-	if global_cache[key].cancellation_token then
-		global_cache[key].cancellation_token.cancel = true
-	end
+	M.cancel_refresh(connection_options)
+
 	local cancellation_token = { cancel = false }
 	global_cache[key].cancellation_token = cancellation_token
 
@@ -501,7 +531,9 @@ M.initialise_cache_async = function(lsp_client, connection_options, force, timeo
 	vim.cmd("redrawstatus")
 	local new_cache, err = get_object_cache_async(lsp_client, connection_options, cancellation_token, timeout_ms)
 	if err then
-		utils.log_warn("Cache initialization failed: " .. tostring(err))
+		if not err:match("Cancelled") then
+			utils.log_warn("Cache initialization failed " .. tostring(err))
+		end
 		return false
 	end
 
@@ -619,6 +651,21 @@ end
 ---@return table<string, GlobalCacheEntry>
 M.get_cache = function()
 	return global_cache
+end
+
+---@param connection_options MssqlConnectionOptions
+M.cancel_refresh = function(connection_options)
+	local key = get_cache_key(connection_options)
+
+	if global_cache[key] and global_cache[key].cancellation_token then
+		local token = global_cache[key].cancellation_token
+		token.cancel = true
+
+		-- force the running coroutine to wake up and cancel immediately
+		if token and token.cleanup_callback then
+			token.cleanup_callback()
+		end
+	end
 end
 
 ---TESTING ONLY: Cancels background jobs and wipes state.

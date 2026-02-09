@@ -549,6 +549,11 @@ end
 function MssqlQueryManager:cleanup()
 	self:cleanup_timer()
 
+	local opts = self:get_connection_options()
+	if opts then
+		finder.cancel_refresh(opts)
+	end
+
 	self.state = MssqlQueryManager.states.disconnected
 	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
 	self.start_time = 0

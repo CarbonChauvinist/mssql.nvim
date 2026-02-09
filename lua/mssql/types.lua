@@ -42,7 +42,7 @@
 
 ---@class GlobalCacheEntry
 ---@field cache? MssqlNode[]
----@field cancellation_token? { cancel: boolean }
+---@field cancellation_token? { cancel: boolean, cleanup_callback: function }
 ---@field refresh_coroutine? thread
 
 ---@class MssqlIconsStatusLine
