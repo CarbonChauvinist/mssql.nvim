@@ -416,24 +416,55 @@ M.create_sql_buffer = function(opts)
 end
 
 --- Waits for the mssql_ls client to attach to a specific buffer.
----@param buf integer The buffer number to check.
+---@param buf? integer The buffer number to check.
 ---@param opts? { timeout_ms: integer } Options table (default 15s).
 ---@return vim.lsp.Client client The attached LSP client.
 M.wait_for_lsp_attach = function(buf, opts)
 	opts = opts or {}
+	if not buf or buf == 0 then
+		buf = vim.api.nvim_get_current_buf()
+	end
+
 	local timeout_ms = opts.timeout_ms or 15000
-	local client
-	utils.log_info("Waiting for LSP to attach...")
+	local final_client
+	local last_debug_state = "No attempt made"
+
+	utils.log_info(string.format("Waiting for LSP to attach to buffer %d...", buf))
+
 	local success = M.poll(function()
-		client = vim.lsp.get_clients({ name = "mssql_ls", bufnr = buf })[1]
-		return client ~= nil
+		if not vim.api.nvim_buf_is_valid(buf) then
+			last_debug_state = "Buffer " .. buf .. " became invalid"
+			return false
+		end
+
+		local clients = vim.lsp.get_clients({ name = "mssql_ls", bufnr = buf })
+
+		if #clients == 0 then
+			last_debug_state = "No clients found for buffer"
+			return false
+		end
+
+		for _, client in	ipairs(clients) do
+			if not client:is_stopped() then
+				final_client = client
+				return true
+			else
+				last_debug_state = string.format("Found client %d but it was STOPPED", client.id)
+			end
+		end
+
+		return false
 	end, { timeout_ms = timeout_ms, interval_ms = 100 })
 
 	if not success then
-		error("LSP client did not attach within " .. (timeout_ms/1000) .. "s")
+		error(string.format(
+			"Timeout waiting for LSP on buf %d. Reason: %s",
+			buf,
+			last_debug_state
+		))
 	end
 
-	return client
+	return final_client
 end
 
 --- Creates a SQL buffer AND waits for the LSP.

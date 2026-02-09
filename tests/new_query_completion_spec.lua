@@ -6,7 +6,7 @@ return {
 		require("mssql").new_query()
 		local buf = vim.api.nvim_get_current_buf()
 		---@type vim.lsp.Client
-		local client = test_utils.wait_for_lsp_attach()
+		local client = test_utils.wait_for_lsp_attach(buf)
 		local statement = "se * from TestTable"
 		assert(client, "No lsp clients attached.")
 
