@@ -4,7 +4,7 @@ local test_utils = require("tests.utils")
 return {
 	test_name = "Event listeners are automatically disposed when buffer closes (Zombie Prevention)",
 	run_test_async = function()
-		local buf, client, qm, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
+		local buf, client, qm, cleanup = test_utils.test_scaffold({ target_db = "TestDbB" })
 
 		local original_handler = qm.handle_query_complete
 		local call_count = 0

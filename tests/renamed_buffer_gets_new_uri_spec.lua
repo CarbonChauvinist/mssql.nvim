@@ -30,7 +30,7 @@ return {
 		vim.api.nvim_cmd({ cmd = "saveas", args = { new_file }, bang = true, mods = { silent = true } }, {})
 
 		local reconnected = test_utils.poll(function()
-			return qm:get_state() == qm.states.connected
+			return qm and qm:get_state() == qm.states.connected
 		end)
 		assert(reconnected, "Did not auto-reconnect after rename")
 
