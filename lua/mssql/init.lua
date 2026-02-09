@@ -235,7 +235,7 @@ M.execute_query = function(bufnr)
 	end
 
 	utils.try_resume(coroutine.create(function()
-		local query = utils.get_selected_text()
+		local query = utils.get_selected_text(bufnr)
 		local curr_conf = get_config_or_warn()
 		if not curr_conf then return end
 		if qm:get_state() == qm.states.disconnected then

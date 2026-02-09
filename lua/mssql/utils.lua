@@ -265,22 +265,30 @@ M.log_error = function(msg)
 end
 
 
-M.get_selected_text = function()
-	local mode = vim.api.nvim_get_mode().mode
-	if not (mode == "v" or mode == "V" or mode == "\22") then -- \22 is Ctrl-V (visual block)
-		local content = vim.api.nvim_buf_get_lines(0, 0, vim.api.nvim_buf_line_count(0), false)
-		return table.concat(content, "\n")
+---Gets the selected text or the full buffer content if no selection
+---@param bufnr? integer The buffer to read from (defaults to 0/current)
+---@return string
+M.get_selected_text = function(bufnr)
+	bufnr = bufnr or 0
+	local current_buf = vim.api.nvim_get_current_buf()
+
+	if (bufnr == 0 or bufnr == current_buf) then
+		local mode = vim.api.nvim_get_mode().mode
+		if mode == "v" or mode == "V" or mode == "\22" then -- \22 is Ctrl-V (visual block)
+			-- exit visual mode so the marks are applied
+			local esc = vim.api.nvim_replace_termcodes("<esc>", true, false, true)
+			vim.api.nvim_feedkeys(esc, "x", false)
+
+			local start_pos = vim.fn.getpos("'<")
+			local end_pos = vim.fn.getpos("'>")
+			local lines = vim.fn.getregion(start_pos, end_pos, { mode = vim.fn.visualmode() })
+
+			return table.concat(lines, "\n")
+		end
 	end
 
-	-- exit visual mode so the marks are applied
-	local esc = vim.api.nvim_replace_termcodes("<esc>", true, false, true)
-	vim.api.nvim_feedkeys(esc, "x", false)
-
-	local start_pos = vim.fn.getpos("'<")
-	local end_pos = vim.fn.getpos("'>")
-	local lines = vim.fn.getregion(start_pos, end_pos, { mode = vim.fn.visualmode() })
-
-	return table.concat(lines, "\n")
+	local content = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+	return table.concat(content, "\n")
 end
 
 --- Executes a query and returns all the results in the first batch and result set as a table of rows
