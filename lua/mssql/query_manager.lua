@@ -26,7 +26,7 @@ local STATE_TRANSITIONS = {
 --- Constructor
 ---@param bufnr integer
 ---@param client vim.lsp.Client
----@param opts MssqlConfig
+---@param opts MssqlOptions
 ---@return MssqlQueryManager
 function MssqlQueryManager.new(bufnr, client, opts)
 	local self = setmetatable({}, MssqlQueryManager)
@@ -483,13 +483,11 @@ function MssqlQueryManager:initialise_cache_async(scope, force)
 		return false
 	end
 
-	local timeout = (scope == "server") and 30000 or nil
 	return finder.initialise_cache_async(
 		self.client,
 		self.last_connect_params.connection.options,
 		scope,
-		force,
-		timeout
+		force
 	)
 end
 

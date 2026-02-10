@@ -583,17 +583,16 @@ end
 ---@param connection_options MssqlConnectionOptions
 ---@param scope? string
 ---@param force? boolean
----@param timeout_ms? integer Optional timeout in milliseconds (default: 30000 if server, 10000 if database)
 ---@return boolean success
-M.initialise_cache_async = function(lsp_client, connection_options, scope, force, timeout_ms)
+M.initialise_cache_async = function(lsp_client, connection_options, scope, force)
 	if not scope or type(scope) ~= "string" or (scope ~= "server" and scope ~= "database") then
 		scope = "database"
 	end
 
-	if not timeout_ms or type(timeout_ms) ~= "number" or timeout_ms <= 0 then
-		timeout_ms = (scope == "server") and 30000 or 10000
-	end
-
+	local config = state.get_config()
+	local timeouts = config and config.object_explorer_timeouts
+	local timeout_sec = (timeouts and timeouts[scope]) or ((scope == "server") and 180 or 90)
+	local timeout_ms = timeout_sec * 1000
 
 	if type(force) ~= "boolean" or not force then
 		force = false

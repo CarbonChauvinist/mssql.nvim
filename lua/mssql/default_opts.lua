@@ -32,6 +32,14 @@ local M = {
 	-- Timeout for query execution in seconds, use less than 0 or nil for no timeout
 	query_timeout = nil,
 
+	-- Timeouts for object explorer expansion in seconds (i.e. finder)
+	-- server: Timeout for connecting to server/listing databases
+	-- database: Timeout for expanding database tables/views/etc
+	object_explorer_timeouts = {
+		server = 180,
+		database = 90
+	},
+
 	-- Automatically re-establish the connection when a buffer is renamed (e.g. :saveas)
 	auto_connect_on_rename = true,
 

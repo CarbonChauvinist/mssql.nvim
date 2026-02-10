@@ -366,8 +366,14 @@ M.wait_for_status = function(expected_pattern, opts)
 end
 
 --- Calls mssql.setup and yields until its async callback is done.
----@param opts table The options table to pass to setup().
+---@param opts? table The options table to pass to setup().
 M.setup_mssql_async = function(opts)
+	opts = opts or {}
+	local test_defaults = {
+		open_results_in = "current_window",
+	}
+	opts = vim.tbl_deep_extend("keep", opts, test_defaults)
+
 	local co = coroutine.running()
 	mssql.setup(opts, function()
 		vim.schedule(function()
@@ -531,7 +537,13 @@ end
 ---@return boolean status? True if item_label is found in cache.
 M.wait_for_cache_content = function(item_label, opts)
 	opts = opts or {}
-	local timeout_ms = opts.timeout or 30000
+
+	local config = require("mssql.state").get_config()
+	local timeouts = config and config.object_explorer_timeouts
+	local config_timeout = timeouts and timeouts.database and (timeouts.database * 1000)
+	local timeout_ms = opts.timeout or config_timeout or 30000
+	print("timeout_ms is: " .. tostring(timeout_ms))
+
 
 	local cache_info = {
 		size = 0,

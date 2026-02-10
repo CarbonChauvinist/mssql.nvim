@@ -1,10 +1,16 @@
 local finder = require("mssql.find_object")
 local state = require("mssql.state")
+local test_utils = require("tests.utils")
 
 return {
 	test_name = "Cache initialization times out gracefully using real timer",
 	run_test_async = function()
-		local TEST_TIMEOUT_MS = 50
+		test_utils.setup_mssql_async({
+			object_explorer_timeouts = {
+				server = 1,
+				database = 1
+			}
+		})
 
 		local mock_client = {
 			id = 7777,
@@ -48,6 +54,13 @@ return {
 		local success = finder.initialise_cache_async(mock_client, connection_options, true, TEST_TIMEOUT_MS)
 		if state._reset_all_state then state._reset_all_state() end
 		assert(success == false, "Function should have returned false (failed) due to timeout.")
+
+		test_utils.setup_mssql_async({
+			object_explorer_timeouts = {
+				server = 180,
+				database = 90,
+			}
+		})
 
 	end,
 }
