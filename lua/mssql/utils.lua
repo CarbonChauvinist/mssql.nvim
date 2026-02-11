@@ -395,33 +395,19 @@ end
 ---@param deny? string[] Deny list.
 ---@return string[] filtered_items
 M.filter_list = function(items, allow, deny)
-	if allow and #allow == 0 then
-		return {}
-	end
+	if allow and #allow == 0 then return {} end
+	if not allow and (not deny or #deny == 0) then return vim.deepcopy(items) end
 
-	if not allow and (not deny or #deny == 0) then
-		return vim.deepcopy(items)
+	local function matches_any(item, list)
+		for _, val in ipairs(list) do
+			if matches_filter(item, val) then return true end
+		end
 	end
 
 	return vim.tbl_filter(function(item)
-		if allow then
-			local allowed = false
-			for _, entry in ipairs(allow) do
-				if matches_filter(item, entry) then
-					allowed = true
-					break
-				end
-			end
-			if not allowed then return false end
-		end
+		if deny and matches_any(item, deny) then return false end
 
-		if deny then
-			for _, entry in ipairs(deny) do
-				if matches_filter(item, entry) then
-					return false
-				end
-			end
-		end
+		if allow then return matches_any(item, allow) end
 
 		return true
 	end, items)

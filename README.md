@@ -245,7 +245,30 @@ The format is `"connection name": connection object`. Eg:
     "authenticationType": "SqlLogin",
     "user": "Admin",
     "password": "Your_Password",
-    "trustServerCertificate": true
+    "trustServerCertificate": true,
+
+    -- LEVEL 1: Which databases do I see?
+    "databaseAllowList": [ "userA", "userB.*" ],
+
+    -- LEVEL 2: Inside those databases, what objects do I see?
+    -- NOTE: 'sys' and 'INFORMATION_SCHEMA' schemas are excluded by default
+    "objectFilters": {
+        -- Tables: Allow 'dbo', deny legacy tables
+        "t": {
+            "allow": ["dbo.*"],
+            "deny": ["dbo.old_.*"]
+        },
+
+        -- Sprocs: ONLY allow 'api' schema (Denies dbo, sales, etc. by omission)
+        "sp": {
+            "allow": ["api.*"]
+        },
+
+        -- Views: Allow everything EXCEPT 'security' schema
+        "v": {
+            "deny": ["security.*"]
+        }
+    }
   },
   "Connection B": {
     "server": "AnotherServer",

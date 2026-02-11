@@ -381,6 +381,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 						allowed = false
 					end
 				end
+
 				if allowed then
 					table.insert(cache, node)
 				end
