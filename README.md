@@ -222,7 +222,15 @@ You can call the following as key maps typing your
 | `c`     | `Connect`          | `connect()`            | Connect the current buffer (you'll be prompted to choose a connection)                                                                                                            |
 | `x`     | `ExecuteQuery`     | `execute_query()`      | Execute the selection, or the whole buffer. If you are disconnected, it will try to connect to the `default` connection in your `connections.json`.                               |
 | `f`     | `Find`             | `find_object()`        | Find a table/view/stored procedure/function on connected database and generate a script                                                                                                                 |
-| `F`     | `FindServer`        | `find_object_server()` | Find a table/view/stored procedure/function on databased from connected server and generate a script (respects database allow/deny lists)                                                                                                                 |
+| `ft`     | `Find Table`             | `find_object({object_type = "t"})`        | Find a table on connected database and generate a script                                                                                                                 |
+| `fv`     | `Find View`             | `find_object({object_type = "v"})`        | Find a view on connected database and generate a script                                                                                                                 |
+| `fp`     | `Find Sproc`             | `find_object({object_type = "p"})`        | Find a stored procedure on connected database and generate a script                                                                                                                 |
+| `ff`     | `Find Func`             | `find_object({object_type = "f"})`        | Find a function on connected database and generate a script                                                                                                                 |
+| `F`     | `FindServer`        | `find_object({scope="server"})` | Find a table/view/stored procedure/function on databased from connected server and generate a script (respects database allow/deny lists)                                                                                                                 |
+| `Ft`     | `FindServer Table`             | `find_object({scope = "server", object_type = "t"})`        | Find a table on connected database and generate a script                                                                                                                 |
+| `Fv`     | `FindServer View`             | `find_object({scope = "server", object_type = "v"})`        | Find a view on connected database and generate a script                                                                                                                 |
+| `Fp`     | `FindServer Sproc`             | `find_object({scope = "server", object_type = "p"})`        | Find a stored procedure on connected database and generate a script                                                                                                                 |
+| `Ff`     | `FindServer Func`             | `find_object({scope = "server", object_type = "f"})`        | Find a function on connected database and generate a script                                                                                                                 |
 | `l`     | `CancelQuery`      | `cancel_query()`       | Cancel the currently running query.                                                                                                                                               |
 | `q`     | `Disconnect`       | `disconnect()`         | Disconnects the current buffer                                                                                                                                                    |
 | `s`     | `SwitchDatabase`   | `switch_database()`    | Prompts, then switches to a database that is on the currently connected server                                                                                                    |
@@ -251,6 +259,7 @@ The format is `"connection name": connection object`. Eg:
     "databaseAllowList": [ "userA", "userB.*" ],
 
     -- LEVEL 2: Inside those databases, what objects do I see?
+    -- allows for granular schema filtering using lua patterns
     -- NOTE: 'sys' and 'INFORMATION_SCHEMA' schemas are excluded by default
     "objectFilters": {
         -- Tables: Allow 'dbo', deny legacy tables

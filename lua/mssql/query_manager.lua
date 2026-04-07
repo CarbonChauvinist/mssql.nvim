@@ -492,11 +492,13 @@ function MssqlQueryManager:initialise_cache_async(scope, force)
 end
 
 ---@param scope string? Optional ("server" | "database"). Defaults to database.
+---@param object_type string? Optional filter char ('t', 'v', 'f', 'p')
 ---@return { script: string, select: boolean }?
-function MssqlQueryManager:find_async(scope)
+function MssqlQueryManager:find_async(scope, object_type)
 	if not scope or (scope ~= "server" and scope ~= "database") then
 		scope = "database"
 	end
+
 	local options = self:get_connection_options()
 	if not options then
 		utils.log_warn("Cannot find objects: not connected")
@@ -506,7 +508,8 @@ function MssqlQueryManager:find_async(scope)
 	return finder.find_async(
 		self.last_connect_params.connection.options,
 		self.client,
-		scope
+		scope,
+		object_type
 	)
 end
 

@@ -542,8 +542,6 @@ M.wait_for_cache_content = function(item_label, opts)
 	local timeouts = config and config.object_explorer_timeouts
 	local config_timeout = timeouts and timeouts.database and (timeouts.database * 1000)
 	local timeout_ms = opts.timeout or config_timeout or 30000
-	print("timeout_ms is: " .. tostring(timeout_ms))
-
 
 	local cache_info = {
 		size = 0,

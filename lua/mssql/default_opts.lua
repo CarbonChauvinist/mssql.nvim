@@ -131,7 +131,7 @@ local M = {
 			}
 		},
 		t = {
-			default = "create",
+			default = "select",
 			actions = {
 				{ action = "drop", label = "Drop Table" },
 				{ action = "create", label = "Create Table" },

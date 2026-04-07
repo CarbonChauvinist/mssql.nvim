@@ -3,6 +3,8 @@ local query_manager_module = require("mssql.query_manager")
 local utils = require("mssql.utils")
 
 return {
+	---@param prefix string
+	---@param M MssqlModule The mssql module (from init.lua)
 	set_keymaps = function(prefix, M)
 		if not prefix then
 			return
@@ -40,14 +42,63 @@ return {
 			},
 			find_object = {
 				"f",
-				M.find_object,
+				function() M.find_object() end,
 				desc = "Find",
+				icon = { icon = "", color = "green" },
+			},
+			find_table = {
+				"ft",
+				function() M.find_object({object_type = "t"}) end,
+				desc = "Find Table",
+				icon = { icon = "", color = "green" },
+			},
+			find_view = {
+				"fv",
+				function() M.find_object({object_type = "v"}) end,
+				desc = "Find View",
+				icon = { icon = "", color = "green" },
+			},
+			find_sproc = {
+				"fp",
+				function() M.find_object({object_type = "p"}) end,
+				desc = "Find Sproc",
+				icon = { icon = "", color = "green" },
+			},
+			find_func = {
+				"ff",
+				function() M.find_object({object_type = "f"}) end,
+				desc = "Find Function",
 				icon = { icon = "", color = "green" },
 			},
 			find_object_server = {
 				"F",
-				M.find_object_server,
-				desc = "Find (Server)", icon = { icon = "", color = "green" },
+				function() M.find_object({scope = "server"}) end,
+				desc = "Find (Server)",
+				icon = { icon = "", color = "red" },
+			},
+			find_table_server = {
+				"Ft",
+				function() M.find_object({scope = "server", object_type = "t"}) end,
+				desc = "Find Table (Server)",
+				icon = { icon = "", color = "red" },
+			},
+			find_view_server = {
+				"Fv",
+				function() M.find_object({scope = "server", object_type = "v"}) end,
+				desc = "Find View",
+				icon = { icon = "", color = "red" },
+			},
+			find_sproc_server = {
+				"Fp",
+				function() M.find_object({scope = "server", object_type = "p"}) end,
+				desc = "Find Sproc (Server)",
+				icon = { icon = "", color = "red" },
+			},
+			find_func_server = {
+				"Ff",
+				function() M.find_object({scope = "server", object_type = "f"}) end,
+				desc = "Find Function (Server)",
+				icon = { icon = "", color = "red" },
 			},
 		}
 
@@ -169,6 +220,7 @@ return {
 		end
 	end,
 
+	---@param M MssqlModule
 	set_user_commands = function(M)
 		local commands = {
 			Connect = M.connect,
@@ -182,12 +234,44 @@ return {
 			NewQuery = M.new_query,
 			NewDefaultQuery = M.new_default_query,
 			SaveQueryResults = M.save_query_results,
-			Find = M.find_object,
-			FindServer = M.find_object_server,
 			CancelQuery = M.cancel_query,
+
+			Find = function(args)
+				local opts = { scope = "database" }
+				for _, arg in ipairs(args) do
+					if arg == "server" then opts.scope = "server"
+					elseif arg == "table" then opts.object_type = "t"
+					elseif arg == "view" then opts.object_type = "v"
+					elseif arg == "proc" then opts.object_type = "p"
+					elseif arg == "func" then opts.object_type = "f"
+					end
+				end
+				M.find_object(opts)
+			end,
+
+			FindServer = function(args)
+				local opts = { scope = "server" }
+				for _, arg in ipairs(args) do
+					if arg == "table" then opts.object_type = "t"
+					elseif arg == "view" then opts.object_type = "v"
+					elseif arg == "proc" then opts.object_type = "p"
+					elseif arg == "func" then opts.object_type = "f"
+					end
+				end
+				M.find_object(opts)
+			end,
 		}
 
-		local complete = function(_, _, _)
+		local complete = function(_, cmd_line, _)
+			local parts = vim.split(cmd_line, "%s+")
+			local subcommand = parts[2]
+
+			if subcommand == "Find" or subcommand == "FindServer" then
+				if #parts > 2 then
+					return { "server", "table", "view", "proc", "func" }
+				end
+			end
+
 			local qm = vim.b.query_manager
 			if vim.b.query_result_info then
 				return {
@@ -252,12 +336,17 @@ return {
 			end
 		end
 
-		vim.api.nvim_create_user_command("MSSQL", function(args)
-			local command = commands[args.args]
-			if not command then
-				error("No such command " .. args.args, 0)
+		vim.api.nvim_create_user_command("MSSQL", function(opts)
+			local fargs = opts.fargs
+			local cmd_name = fargs[1]
+
+			local handler = commands[cmd_name]
+			if not handler then
+				error("No such command " .. (cmd_name or ""), 0)
 			end
-			command()
-		end, { nargs = 1, complete = complete })
+
+			table.remove(fargs, 1)
+			handler(fargs)
+		end, { nargs = "+", complete = complete })
 	end,
 }

@@ -217,8 +217,8 @@
 ---@field last_execution fun(self: MssqlQueryManager): MssqlExecutionInfo
 ---@field update_connection_params fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult): boolean
 ---@field connectionchanged_async fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult)
----@field initialise_cache_async fun(self: MssqlQueryManager, scope: string, force?: boolean): boolean
----@field find_async fun(self: MssqlQueryManager): {script: string, select: boolean }?
+---@field initialise_cache_async fun(self: MssqlQueryManager, scope: string?, force?: boolean): boolean
+---@field find_async fun(self: MssqlQueryManager, scope: string?, object_type: string?): {script: string, select: boolean }?
 ---@field is_refreshing fun(self: MssqlQueryManager): boolean?
 ---@field handle_query_complete fun(self: MssqlQueryManager, result: MssqlQueryExecuteSubsetResult)
 ---@field handle_query_message fun(self: MssqlQueryManager, result: MssqlQueryMessageResult)
@@ -255,5 +255,27 @@
 ---@class PickerOptions
 ---@field title string The title/prompt for the picker
 ---@field keymaps table<string, MssqlActionId> Key chords mapped to Intent IDs (e.g. { ["<M-c>"] = "create" })
+
+---@class FindObjectOpts
+---@field scope? "server"|"database" Scope of search (defaults to "database")
+---@field object_type? "t"|"v"|"p"|"f" Filter by type (table, view, proc, func)
+---@field bufnr? integer Target buffer (defaults to current)
+---@field callback? fun() Function to run after selection
+
+---@class MssqlModule
+---@field setup fun(opts?: MssqlConfig) Setup the plugin
+---@field connect fun() Connect to a database
+---@field disconnect fun() Disconnect the current session
+---@field execute_query fun() Execute the query under the cursor or selection
+---@field find_object fun(opts?: FindObjectOpts) Find objects (tables, views, etc.)
+---@field refresh_cache fun() Refresh the the Intellisense cache
+---@field edit_connections fun() Edit the connections.json file
+---@field switch_database fun() Switch to a different database
+---@field new_query fun() Open a query window
+---@field new_default_query fun() Open a new query window using default connection
+---@field save_query_results fun() Save the results of the last query
+---@field cancel_query fun() Cancel the currently running query
+---@field backup_database fun() Script a database backup
+---@field restore_database fun() Script a database restore
 
 return {}

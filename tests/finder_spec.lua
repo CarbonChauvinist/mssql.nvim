@@ -59,28 +59,27 @@ return {
 		wipe_buf(buf)
 		next_intent = nil
 
-		mssql.find_object(buf)
+		mssql.find_object({bufnr = buf})
+		local res_buf, _, results = test_utils.res_buf_catcher()
+		assert(results:lower():find("hyundai"), "Failed to execute SELECT query")
+		test_utils.cleanup_results_buffer(res_buf)
+
+		-- test 2 - select action - intent = select
+		wipe_buf(buf)
+		next_intent = "create"
+
+		mssql.find_object({bufnr = buf})
 		local create_success = test_utils.poll(function()
 			local content = test_utils.get_buffer_content(buf)
 			return content:lower():match("create table")
 		end)
 		assert(create_success, "Failed to generate CREATE script (Default action)")
 
-		-- test 2 - select action - intent = select
-		wipe_buf(buf)
-		next_intent = "select"
-
-		mssql.find_object(buf)
-
-		local res_buf, _, results = test_utils.res_buf_catcher()
-		assert(results:lower():find("hyundai"), "Failed to execute SELECT query")
-		test_utils.cleanup_results_buffer(res_buf)
-
 		-- test 3 - drop action - intent = drop
 		wipe_buf(buf)
 		next_intent = "drop"
 
-		mssql.find_object(buf)
+		mssql.find_object({bufnr = buf})
 		local drop_success = test_utils.poll(function()
 			local content = test_utils.get_buffer_content(buf)
 			return content:lower():match("drop table")
@@ -91,7 +90,7 @@ return {
 		wipe_buf(buf)
 		next_intent = "menu"
 
-		mssql.find_object(buf)
+		mssql.find_object({bufnr = buf})
 		local menu_success = test_utils.poll(function()
 			local content = test_utils.get_buffer_content(buf)
 			return content:lower():match("drop table")
@@ -106,7 +105,7 @@ return {
 			vim.schedule(function() on_select(nil, nil) end)
 		end
 
-		local status, err = pcall(function() mssql.find_object(buf) end)
+		local status, err = pcall(function() mssql.find_object({bufnr = buf}) end)
 		assert(status, "Find object crashed on cancellation: " .. tostring(err))
 
 
@@ -130,7 +129,7 @@ return {
 		}
 		state.set_config(new_config)
 
-		mssql.find_object(buf)
+		mssql.find_object({bufnr = buf})
 		local override_success = test_utils.poll(function()
 			local content = test_utils.get_buffer_content(buf)
 			return content:lower():match("select top %(1000%)")
@@ -150,7 +149,7 @@ return {
 		wipe_buf(buf)
 		next_intent = "unknown thing"
 
-		local unknown_intent_status, unknown_intent_err = pcall(function() mssql.find_object(buf) end)
+		local unknown_intent_status, unknown_intent_err = pcall(function() mssql.find_object({bufnr = buf}) end)
 		assert(unknown_intent_status, "Plugin crashed on unknown intent: " .. tostring(unknown_intent_err))
 		local content = test_utils.get_buffer_content(buf)
 		assert(content == "", "Should not generate script for unknown intent. Got: " .. content)

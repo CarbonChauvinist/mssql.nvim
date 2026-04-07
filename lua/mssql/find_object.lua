@@ -79,6 +79,12 @@ local BUILTIN_ACTIONS = {
 	}
 }
 
+--- Helper to escape Lua magic characters (brackets, parens, dots, etc.)
+---@param text string
+local function escape_pattern(text)
+	return text:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+end
+
 --- Generates a consistent cache key.
 --- For 'server' scope, strip the specific database name so the cache is shared
 --- across all DBs on the same server instance.
@@ -142,7 +148,7 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 	local dispose
 	dispose = state.on_event("objectexplorer/sessioncreated", function(err, result, ctx)
 		if ctx and ctx.client_id == client.id then
-			if not resumed and result and result.rootNode then
+			if not resumed and result and result ~= vim.NIL and result.rootNode and result.rootNode ~= vim.NIL then--  and result.rootNode then
 				resumed = true
 				utils.try_resume(co, result, err)
 			end
@@ -174,7 +180,7 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 			return
 		end
 
-		if result and result.rootNode then
+		if result and result ~= vim.NIL and result.rootNode and result.rootNode ~= vim.NIL then-- and result.rootNode then
 			if not resumed then
 				resumed = true
 				if dispose then dispose() end
@@ -196,12 +202,12 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 
 	if err then return nil, err end
 
-	if not (result and result.rootNode) then
+	if not result or result == vim.NIL or not result.rootNode or result.rootNode == vim.NIL then-- type(result) ~= "table" or not result.rootNode then-- not (result and result.rootNode) then
 		utils.log_error("Session created but missing rootNode. Result: " .. vim.inspect(result))
 		return nil
 	end
 
-	if result.rootNode and result.rootNode.objectType == "Server" then
+	if result.rootNode.objectType == "Server" then--result.rootNode and result.rootNode.objectType == "Server" then
 		result.target_path = result.rootNode.nodePath
 	end
 
@@ -533,6 +539,7 @@ local generate_script_async = function(item, client, action_def)
 				type = item.metadata.metadataTypeName,
 				schema = item.metadata.schema,
 				name = item.metadata.name,
+				urn = item.metadata.urn,
 			},
 		},
 		scriptOptions = {
@@ -549,13 +556,29 @@ local generate_script_async = function(item, client, action_def)
 		error("Error generating script: " .. vim.inspect({ err = script_err, scripting_params = scripting_params }), 0)
 	end
 
-	if not (res and res.script) then
+	if not (res and res.script and res.script ~= vim.NIL) then
 		error("Error generating script (no script returned from language server)", 0)
+	end
+
+	local script_content = res.script
+	local target_db = item.metadata.urn and item.metadata.urn:match("Database%[@Name='(.-)'%]")
+
+	if item.objectType == "Table" and target_db then
+		local schema = escape_pattern(item.metadata.schema)
+		local name = escape_pattern(item.metadata.name)
+
+		local pattern = "((%[[^%]]+%])%.%[" .. schema .. "%]%.%[" .. name .. "%])"
+		script_content, _ = string.gsub(script_content, pattern, function(full_match, db_name)
+			if db_name ~= "[" .. target_db .. "]" then
+				return "[" .. target_db.. "].[" .. schema .. "].[" .. name .. "]"
+			end
+			return full_match
+		end)
 	end
 
 	return {
 		-- strip carriage returns
-		script = res.script:gsub("\r", ""),
+		script = script_content:gsub("\r", ""),
 		select = (scripting_params.operation == 0),
 	}
 end
@@ -634,8 +657,9 @@ end
 ---@param connection_options MssqlConnectionOptions
 ---@param lsp_client vim.lsp.Client
 ---@param scope string? Optional scope ("server" | "database"). Defaults to "database".
+---@param filter_char string? Optional type of object to filter picker for ("t", "v", "f", "p").
 ---@return { script: string, select: boolean }?
-M.find_async = function(connection_options, lsp_client, scope)
+M.find_async = function(connection_options, lsp_client, scope, filter_char)
 	local title = "Find"
 	if connection_options and connection_options.database and connection_options.server then
 		title = connection_options.server .. " | " .. connection_options.database
@@ -647,9 +671,19 @@ M.find_async = function(connection_options, lsp_client, scope)
 
 	local key = get_cache_key(connection_options, scope) --[[@as ConnectionKey]]
 	---@type MssqlNode[]
+
 	local cache = (global_cache[key] and global_cache[key].cache) or {}
 
-	local item, intent = pick_item_async(cache, title)
+	local items_to_show = cache
+
+	if filter_char then
+		items_to_show = vim.tbl_filter(function(node)
+			local short_code = OBJECT_TYPE_MAP[node.objectType]
+			return short_code == filter_char
+		end, global_cache)
+	end
+
+	local item, intent = pick_item_async(items_to_show, title)
 	if not item then return end
 
 	local config = state.get_config() or {}
