@@ -237,7 +237,35 @@ M.execute_query = function(opts)
 	end
 
 	utils.try_resume(coroutine.create(function()
-		local query = utils.get_selected_text(bufnr)
+		local query
+
+		if rerun then
+			utils.log_error("Here is current last_query_extmarks: ")
+			if not state.is_last_query_extmarks_valid() then
+				utils.log_error("No valid previous query selection found to rerun.")
+				return
+			end
+			local range = state.get_last_query_range_from_extmarks()--state.get_last_query_range()
+			if not range then
+				utils.log_error("No previous query range found.")
+				return
+			end
+			local lines = vim.fn.getregion(range.start, range.end_, { mode = "v"})
+			query = table.concat(lines, "\n")
+			if not query or query == "" then
+				utils.log_error("No text found in previous selection range.")
+				return
+			end
+
+			if opts.highlight == true then
+				vim.fn.setpos("'<", range.start)
+				vim.fn.setpos("'>", range.end_)
+				vim.cmd.normal("gv")
+			end
+		else
+			query = utils.get_selected_text(bufnr)
+		end
+
 		local curr_conf = get_config_or_warn()
 		if not curr_conf then return end
 		if qm:get_state() == qm.states.disconnected then

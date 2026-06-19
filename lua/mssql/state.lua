@@ -23,6 +23,14 @@ local event_listeners = {}
 ---@type table<string, function[]?>
 local named_listeners = {}
 
+-- Store the last query selection range for rerun functionality
+---@type {start: number[], end_: number[], buf: integer}?
+local last_query_range = nil
+
+-- Store extmark IDs of selection range instead of raw positions for rerun functionality
+---@type {start: integer, end_: integer, buf: integer}?
+local last_query_extmarks = nil
+
 ---@param client_id integer
 M.set_client_ready = function(client_id)
 	ready_clients[client_id] = true
@@ -181,6 +189,124 @@ M.emit_event = function(method, err, result, ctx)
 	end
 end
 
+---@param range {start: number[], end_: number[], buf: integer}
+M.set_last_query_range = function(range)
+	last_query_range = range
+end
+
+---@return {start: number[], end_: number[], buf: integer}?
+M.get_last_query_range = function()
+	return last_query_range
+end
+
+---Clears the last query range (useful when buffer is closed or after certain operations)
+M.clear_last_query_range = function()
+	last_query_range = nil
+end
+
+---Checks if the last query range is still valid
+---@return boolean
+M.is_last_query_range_valid = function()
+	if not last_query_range then
+		return false
+	end
+	if not vim.api.nvim_buf_is_valid(last_query_range.buf) then
+		M.clear_last_query_range()
+		return false
+	end
+	return true
+end
+
+---Checks if the last query range is still valid
+---@return boolean
+M.is_last_query_extmarks_valid = function()
+	if not last_query_extmarks then
+		return false
+	end
+	if not vim.api.nvim_buf_is_valid(last_query_extmarks.buf) then
+		M.clear_last_query_extmarks()
+		return false
+	end
+	return true
+end
+
+---@param bufnr integer
+---@param start_pos number[] position from getpos()
+---@param end_pos number[] position from getpos()
+M.set_last_query_range_as_extmarks = function(bufnr, start_pos, end_pos)
+	M.clear_last_query_extmarks()
+
+	local start_line = start_pos[2] - 1
+	local start_col = start_pos[3] - 1
+	local end_line = end_pos[2] - 1
+	local end_col = end_pos[3] - 1
+
+	local start_ns = vim.api.nvim_create_namespace("mssql_last_query_start")
+	local end_ns = vim.api.nvim_create_namespace("mssql_last_query_end")
+	local start_id = vim.api.nvim_buf_set_extmark(bufnr, start_ns, start_line, start_col, {
+	})
+
+	local end_id = vim.api.nvim_buf_set_extmark(bufnr, end_ns, end_line, end_col, {
+		right_gravity = false,
+	})
+
+	last_query_extmarks = {
+		buf = bufnr,
+		start_ns = start_ns,
+		end_ns = end_ns,
+		start_id = start_id,
+		end_id = end_id,
+	}
+end
+
+
+M.get_last_query_range_from_extmarks = function()
+  if not last_query_extmarks then
+	vim.notify("Don't have `last_query_extmarks`", vim.log.levels.ERROR)
+    return nil
+  end
+
+  if not vim.api.nvim_buf_is_valid(last_query_extmarks.buf) then
+	vim.notify("Don't have a valid buf in `last_query_extmarks`", vim.log.levels.ERROR)
+    M.clear_last_query_extmarks()
+    return nil
+  end
+
+  local start_pos = vim.api.nvim_buf_get_extmark_by_id(
+    last_query_extmarks.buf,
+    last_query_extmarks.start_ns,
+    last_query_extmarks.start_id,
+    { details = false }
+  )
+
+  local end_pos = vim.api.nvim_buf_get_extmark_by_id(
+    last_query_extmarks.buf,
+    last_query_extmarks.end_ns,
+    last_query_extmarks.end_id,
+    { details = false }
+  )
+
+  if not start_pos or #start_pos == 0 or not end_pos or #end_pos == 0 then
+	vim.notify("Either `start_pos` or `end_pos` was not populated", vim.log.levels.ERROR)
+    M.clear_last_query_extmarks()
+    return nil
+  end
+
+  return {
+    start = { last_query_extmarks.buf, start_pos[1] + 1, start_pos[2] + 1, 0 },
+    end_ = { last_query_extmarks.buf, end_pos[1] + 1, end_pos[2] + 1, 0 },
+    buf = last_query_extmarks.buf,
+  }
+end
+
+M.clear_last_query_extmarks = function()
+	if last_query_extmarks then
+		pcall(vim.api.nvim_buf_del_extmark, last_query_extmarks.buf, last_query_extmarks.start_ns, last_query_extmarks.start_id)
+		pcall(vim.api.nvim_buf_del_extmark, last_query_extmarks.buf, last_query_extmarks.end_ns, last_query_extmarks.end_id)
+		last_query_extmarks = nil
+	end
+end
+
 ---TESTING ONLY: Resets ALL internal module state.
 ---Use in teardown/after_each block of specs to ensure isolation.
 M._reset_all_state = function()
@@ -189,6 +315,8 @@ M._reset_all_state = function()
 	attach_handlers = {}
 	query_managers = {}
 	ready_clients = {}
+	last_query_range = nil
+	M.clear_last_query_extmarks()
 end
 
 return M
