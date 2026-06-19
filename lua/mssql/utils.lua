@@ -293,6 +293,14 @@ M.get_selected_text = function(bufnr)
 
 			local start_pos = vim.fn.getpos("'<")
 			local end_pos = vim.fn.getpos("'>")
+
+			require("mssql.state").set_last_query_range_as_extmarks(bufnr, start_pos, end_pos)
+			require("mssql.state").set_last_query_range({
+				start = start_pos,
+				end_ = end_pos,
+				buf = current_buf
+			})
+
 			local lines = vim.fn.getregion(start_pos, end_pos, { mode = vim.fn.visualmode() })
 
 			return table.concat(lines, "\n")
