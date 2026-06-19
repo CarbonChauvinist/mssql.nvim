@@ -313,26 +313,35 @@ end
 
 --- Executes a query and returns all the results in the first batch and result set as a table of rows
 M.get_query_result_async = function(query_result_summary)
+	-- ensure overall response payload and first batch summary are all valid tables
 	if M.is_empty(query_result_summary) or M.is_empty(query_result_summary.batchSummaries) or M.is_empty(query_result_summary.batchSummaries[1]) then
 		error("Query result is invalid or empty", 0)
 	end
 
 	if query_result_summary.batchSummaries[1].hasError then
-		error("Query thew an error", 0)
+		error("Query threw an error", 0)
 	end
+
+	local batch_summary = query_result_summary.batchSummaries[1]
+	-- ensure resultSetSummaries exists except for DML statements where it won't exist
+	if M.is_empty(batch_summary.resultSetSummaries) or M.is_empty(batch_summary.resultSetSummaries[1]) then
+		return {} -- No result sets (e.g. INSERT/UPDATE/DELETE)
+	end
+
+	local result_set = batch_summary.resultSetSummaries[1]
 
 	local subset_params = {
 		ownerUri = query_result_summary.ownerUri,
 		batchIndex = 0,
 		resultSetIndex = 0,
 		rowsStartIndex = 0,
-		rowsCount = query_result_summary.batchSummaries[1].resultSetSummaries[1].rowCount,
+		rowsCount = result_set.rowCount
 	}
 
 	M.wait_for_schedule_async()
 
 	local rows = M.get_rows_async(subset_params)
-	local columnNames = vim.iter(query_result_summary.batchSummaries[1].resultSetSummaries[1].columnInfo)
+	local columnNames = vim.iter(result_set.columnInfo)
 		:map(function(ci)
 			return ci.columnName
 		end)

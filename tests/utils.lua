@@ -683,7 +683,6 @@ M.wait_for_completion_item = function(buf, expected_label, opts)
 	local function check_completions()
 		if not vim.api.nvim_buf_is_valid(buf) then return false end
 		local items = M.get_completion_items()
-		if not items then return false end
 		last_items = items
 		return vim.tbl_contains(items, expected_label)
 	end
