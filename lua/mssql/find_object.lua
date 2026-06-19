@@ -95,7 +95,7 @@ local function get_cache_key(opts, scope)
 	local key_opts = vim.deepcopy(opts)
 	if scope == "server" then
 		key_opts.database = nil
-		key_opts.DatabaseDisplayName = nil
+		key_opts.databaseDisplayName = nil
 	end
 	return vim.json.encode(key_opts) .. "|" .. scope
 end
@@ -134,7 +134,7 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 	-- For some reason, if there is no display name set on the connection parameters then
 	-- the language server will treat this as a default/system database:
 	-- https://github.com/microsoft/sqltoolsservice/blob/49036c6196e73c3791bca5d31e97a16afee00772/src/Microsoft.SqlTools.ServiceLayer/ObjectExplorer/ObjectExplorerService.cs#L537
-	connection_options.DatabaseDisplayName = connection_options.DatabaseDisplayName or connection_options.database
+	connection_options.databaseDisplayName = connection_options.databaseDisplayName or connection_options.database
 
 	local co = coroutine.running()
 	local resumed = false
@@ -276,7 +276,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 	local session_opts = vim.deepcopy(connection_options)
 	if scope == "server" then
 		session_opts.database = nil
-		session_opts.DatabaseDisplayName = nil
+		session_opts.databaseDisplayName = nil
 	end
     local session, err = get_session_async(lsp_client, session_opts, timeout_ms, cancellation_token)
 
