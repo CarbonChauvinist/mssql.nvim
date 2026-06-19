@@ -284,7 +284,7 @@ M.wait_for_intellisenseReady = function(buf, client, opts)
 	end
 
 	assert(result, "No result returned from textDocument/intelliSenseReady")
-	if result.errorMessage then
+	if not utils.is_empty(result.errorMessage) then
 		utils.log_error("Error returned from textDocument/intelliSenseReady: " .. result.errorMessage)
 	end
 

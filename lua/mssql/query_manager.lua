@@ -112,7 +112,8 @@ end
 ---@param result any
 ---@return boolean is_MssqlQueryCompleteResult
 local function is_valid_query_complete_result(result)
-	return type(result) == "table"
+	return not utils.is_empty(result)
+		and type(result) == "table"
 		and type(result.batchSummaries) == "table"
 		and #result.batchSummaries > 0
 		and type(result.ownerUri) == "string"
@@ -121,7 +122,8 @@ end
 ---@param result any
 ---@return  boolean is_MssqlConnectionChangedResult
 local function is_valid_connection_changed_result(result)
-	return type(result) == "table"
+	return not utils.is_empty(result)
+		and type(result) == "table"
 		and type(result.ownerUri) == "string"
 		and type(result.connection) == "table"
 end
@@ -241,7 +243,7 @@ function MssqlQueryManager:connect_async(connect_params)
 		self.bufnr, self.client, "connection/complete", timeout_ms
 	)
 
-	if wait_err or (result and result.errorMessage and result.errorMessage ~= vim.NIL) then
+	if wait_err or (not utils.is_empty(result) and not utils.is_empty(result.errorMessage)) then
 		self:set_state(MssqlQueryManager.states.disconnected)
 		return false, "Error in connecting: " .. (wait_err and wait_err.message or result.errorMessage)
 	end
@@ -291,7 +293,7 @@ function MssqlQueryManager:execute_async(query)
 		ownerUri = self:get_owner_uri()
 	})
 
-	if err or not result then
+	if err or utils.is_empty(result) then
 		self:stop_execution_timer()
 		self:set_state(MssqlQueryManager.states.connected)
 		return nil, err and ("Error executing query: " .. (err.message or vim.inspect(err))) or "Could not execute query"
@@ -530,7 +532,7 @@ function MssqlQueryManager:handle_query_complete(result)
 		return
 	end
 
-	local batch_summary = result.batchSummaries[#result.batchSummaries]
+	local batch_summary = not utils.is_empty(result.batchSummaries) and result.batchSummaries[#result.batchSummaries]
 	if not batch_summary then
 	  return
 	end
@@ -539,7 +541,7 @@ function MssqlQueryManager:handle_query_complete(result)
 
 	-- Get total row count for SELECT statements only
 	local total_row_count = 0
-	if batch_summary.resultSetSummaries and #batch_summary.resultSetSummaries > 0 then
+	if not utils.is_empty(batch_summary.resultSetSummaries) and #batch_summary.resultSetSummaries > 0 then
 		local last_result_set = batch_summary.resultSetSummaries[#batch_summary.resultSetSummaries]
 		total_row_count = last_result_set.rowCount or 0
 	end
@@ -549,7 +551,7 @@ end
 
 ---@param result MssqlQueryMessageResult
 function MssqlQueryManager:handle_query_message(result)
-	if not result or not result.message or type(result.message.message) ~= "string" then
+	if utils.is_empty(result) or utils.is_empty(result.message) or type(result.message.message) ~= "string" then
 		return
 	end
 

@@ -148,7 +148,7 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 	local dispose
 	dispose = state.on_event("objectexplorer/sessioncreated", function(err, result, ctx)
 		if ctx and ctx.client_id == client.id then
-			if not resumed and result and result ~= vim.NIL and result.rootNode and result.rootNode ~= vim.NIL then--  and result.rootNode then
+			if not resumed and not utils.is_empty(result) and not utils.is_empty(result.rootNode) then
 				resumed = true
 				utils.try_resume(co, result, err)
 			end
@@ -180,7 +180,7 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 			return
 		end
 
-		if result and result ~= vim.NIL and result.rootNode and result.rootNode ~= vim.NIL then-- and result.rootNode then
+		if not utils.is_empty(result) and not utils.is_empty(result.rootNode) then
 			if not resumed then
 				resumed = true
 				if dispose then dispose() end
@@ -202,12 +202,12 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 
 	if err then return nil, err end
 
-	if not result or result == vim.NIL or not result.rootNode or result.rootNode == vim.NIL then-- type(result) ~= "table" or not result.rootNode then-- not (result and result.rootNode) then
+	if utils.is_empty(result) or utils.is_empty(result.rootNode) then
 		utils.log_error("Session created but missing rootNode. Result: " .. vim.inspect(result))
 		return nil
 	end
 
-	if result.rootNode.objectType == "Server" then--result.rootNode and result.rootNode.objectType == "Server" then
+	if result.rootNode.objectType == "Server" then
 		result.target_path = result.rootNode.nodePath
 	end
 
@@ -238,7 +238,7 @@ end
 ---@param result { sessionId: string }?
 ---@param ctx table
 local function main_expand_handler(err, result, ctx)
-	if not result or not result.sessionId then return end
+	if not result or utils.is_empty(result) or utils.is_empty(result.sessionId) then return end
 
 	local session_callback = active_sessions[result.sessionId]
 	if session_callback then
@@ -280,7 +280,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 	end
     local session, err = get_session_async(lsp_client, session_opts, timeout_ms, cancellation_token)
 
-    if not session or not session.sessionId or not session.rootNode then
+    if not session or utils.is_empty(session) or utils.is_empty(session.sessionId) or utils.is_empty(session.rootNode) then
         return nil, err or "Session creation failed or returned invalid data (missing rootNode)"
     end
     ---@cast session -nil
@@ -350,7 +350,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 	end
 
 	local on_expand_result = function(_, expand_result, _)
-		local nodes = (type(expand_result) == "table" and expand_result.nodes) or {}
+		local nodes = (not utils.is_empty(expand_result.nodes) and expand_result.nodes) or {}
 
 		for _, node in ipairs(nodes) do
 			-- capture: add valid objects (Tables, Views, SProcs) to cache
@@ -358,7 +358,10 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 
 			if type_key then
 				-- filter our system schemas present in every db
-				local schema = node.metadata and node.metadata.schema or ""
+				local schema = ""
+				if not utils.is_empty(node.metadata) then
+					schema = node.metadata.schema or ""
+				end
 				if schema == "sys" or schema == "INFORMATION_SCHEMA" then
 					goto continue
 				end
@@ -556,7 +559,7 @@ local generate_script_async = function(item, client, action_def)
 		error("Error generating script: " .. vim.inspect({ err = script_err, scripting_params = scripting_params }), 0)
 	end
 
-	if not (res and res.script and res.script ~= vim.NIL) then
+	if utils.is_empty(res) or utils.is_empty(res.script) then
 		error("Error generating script (no script returned from language server)", 0)
 	end
 
@@ -564,8 +567,14 @@ local generate_script_async = function(item, client, action_def)
 	local target_db = item.metadata.urn and item.metadata.urn:match("Database%[@Name='(.-)'%]")
 
 	if item.objectType == "Table" and target_db then
-		local schema = escape_pattern(item.metadata.schema)
-		local name = escape_pattern(item.metadata.name)
+		local schema = ""
+		local name = ""
+		if not utils.is_empty(item.metadata) then
+			schema = escape_pattern(item.metadata.schema)
+			name = escape_pattern(item.metadata.name)
+		end
+		-- local schema = escape_pattern(item.metadata.schema)
+		-- local name = escape_pattern(item.metadata.name)
 
 		local pattern = "((%[[^%]]+%])%.%[" .. schema .. "%]%.%[" .. name .. "%])"
 		script_content, _ = string.gsub(script_content, pattern, function(full_match, db_name)
