@@ -9,7 +9,7 @@ return {
 		local query = "SELECT * from dbo.Car WHERE 1=0"
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
 
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 
 		local res_buf, _, results = test_utils.res_buf_catcher()
 		assert(res_buf, "Sql query with zero result rows are not opening a results buffer.")

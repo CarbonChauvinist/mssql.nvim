@@ -21,7 +21,7 @@ return {
 
 			local query = "WAITFOR DELAY '00:00:04' SELECT 1"
 			vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
-			mssql.execute_query(buf)
+			mssql.execute_query({ bufnr = buf })
 
 			local state
 			local reset_success = test_utils.poll(function()
@@ -41,7 +41,7 @@ return {
 
 			vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "SELECT 1 as TestSuccess" })
 			utils.wait_for_schedule_async()
-			mssql.execute_query(buf)
+			mssql.execute_query({ bufnr = buf })
 
 			local res_buf, _, results = test_utils.res_buf_catcher({timeout_ms = 10000})
 			assert(results:find("TestSuccess"), "Subsequent query did not return expected results.")

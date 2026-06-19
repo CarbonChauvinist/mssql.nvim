@@ -23,7 +23,7 @@ return {
 		end
 
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "SELECT 1" })
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 
 		local res_buf = test_utils.res_buf_catcher()
 		assert(res_buf, "Query failed to complete")

@@ -7,7 +7,7 @@ return {
 		local buf, _, _, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
 		local query = "SELECT 'Line1' + CHAR(10) + 'Line2' AS NewLineCol;"
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 
 		local res_buf, status, results = test_utils.res_buf_catcher()
 		assert(status, "Results buffer did not appear.")

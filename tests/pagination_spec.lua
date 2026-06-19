@@ -11,7 +11,7 @@ return {
 		-- Execute query that returns 3 rows (from seed.sql)
 		local query = "SELECT * FROM TestDbB.dbo.Car ORDER BY ID"
 		vim.api.nvim_buf_set_lines(0, 0, -1, false, { query })
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 
 		--- Helper for repetitive assertions
 		---@param res_buf integer Results buffer to parse

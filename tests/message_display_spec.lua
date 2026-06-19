@@ -19,7 +19,7 @@ return {
 
 		local query_notify = "PRINT 'Hello Notification';"
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query_notify })
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 
 		local notification_found = test_utils.poll(function()
 			for _, msg in ipairs(captured_notifications) do
@@ -41,7 +41,7 @@ return {
 		test_utils.setup_mssql_async({ view_messages_in = "buffer" })
 		local query_buffer = "PRINT 'Hello Buffer';"
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query_buffer })
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 
 		local msg_buf_name = ""
 
