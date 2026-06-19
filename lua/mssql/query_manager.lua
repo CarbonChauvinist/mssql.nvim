@@ -252,7 +252,7 @@ function MssqlQueryManager:connect_async(connect_params)
 		end
 		connect_params.connection.summary = result.connectionSummary
 		connect_params.connection.options.database = result.connectionSummary.databaseName
-		connect_params.connection.options.DatabaseDisplayName = result.connectionSummary.databaseName
+		connect_params.connection.options.databaseDisplayName = result.connectionSummary.databaseName
 	end
 
 	self.last_connect_params = connect_params
