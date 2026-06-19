@@ -2,6 +2,29 @@ local qmm = require("mssql.query_manager")
 local state = require("mssql.state")
 local utils = require("mssql.utils")
 
+--- Sanitizes nulllable completion item fields to prevent sorting and validation crashes.
+---
+--- Converts `vim.NIL` values to standard Lua `nil` on sorting/display fields
+--- (detail, documentation, sortText, filterText) inside completion items.
+--- This prevents Neovim's built-in completion logic from throwing userdata comparison
+--- or formatting exceptions on newer Neovim versions (~0.12+).
+---
+---@param result table|nil The LSP textDocument/completion response.
+local function sanitize_completion_items(result)
+	if not result or result == vim.NIL then return end
+	local items = result.items or result
+	if type(items) ~= "table" then return end
+
+	for _, item in ipairs(items) do
+		if type(item) == "table" then
+			if item.detail == vim.NIL then item.detail = nil end
+			if item.documentation == vim.NIL then item.documentation = nil end
+			if item.sortText == vim.NIL then item.sortText = nil end
+			if item.filterText == vim.NIL then item.filterText = nil end
+		end
+	end
+end
+
 local M = {
 	-- sometimes two of these come at once, so hide for 1s
 	hide_initellisense_ready = false
@@ -47,6 +70,11 @@ local generic_event_router = function(method)
 end
 
 local customized_handlers = {
+	["textdocument/completion"] = make_handler("textdocument/completion", function(err, result, ctx, config)
+		sanitize_completion_items(result)
+		vim.lsp.handlers["textDocument/completion"](err, result, ctx, config)
+	end),
+
 	["textdocument/intellisenseready"] = make_handler("textdocument/intellisenseready", function(err, result, ctx)
 		if err then
 			utils.log_error("Could not start intellisense: " .. vim.inspect(err))
@@ -194,6 +222,22 @@ M.enable = function()
 		handlers = customized_handlers,
 
 		on_attach = function(client, bufnr)
+
+			if not client._request_wrapped then
+				client._request_wrapped = true
+				local original_request = client.request
+				client.request = function(self, method, params, handler, bufnr_arg)
+					if method == "textDocument/completion" and handler then
+						local original_handler = handler
+						handler = function(err, result, ctx, config)
+							sanitize_completion_items(result)
+							original_handler(err, result, ctx, config)
+						end
+					end
+					return original_request(self, method, params, handler, bufnr_arg)
+				end
+			end
+
 			local qm = state.get_query_manager(bufnr)
 			local current_opts = state.get_config() or {}
 
