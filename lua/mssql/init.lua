@@ -240,12 +240,11 @@ M.execute_query = function(opts)
 		local query
 
 		if rerun then
-			utils.log_error("Here is current last_query_extmarks: ")
 			if not state.is_last_query_extmarks_valid() then
 				utils.log_error("No valid previous query selection found to rerun.")
 				return
 			end
-			local range = state.get_last_query_range_from_extmarks()--state.get_last_query_range()
+			local range = state.get_last_query_range_from_extmarks()
 			if not range then
 				utils.log_error("No previous query range found.")
 				return

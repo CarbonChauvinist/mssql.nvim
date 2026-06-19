@@ -241,6 +241,15 @@ M.set_last_query_range_as_extmarks = function(bufnr, start_pos, end_pos)
 	local end_line = end_pos[2] - 1
 	local end_col = end_pos[3] - 1
 
+	-- Cap start_col and end_col to actual line length in bytes to avoid out-of-range-errors
+	local start_line_content = vim.api.nvim_buf_get_lines(bufnr, start_line, start_line + 1, false)[1] or ""
+	local start_line_len = string.len(start_line_content)
+	start_col = math.max(0, math.min(start_col, start_line_len))
+
+	local end_line_content = vim.api.nvim_buf_get_lines(bufnr, end_line, end_line + 1, false)[1] or ""
+	local end_line_len = string.len(end_line_content)
+	end_col = math.max(0, math.min(end_col, end_line_len))
+
 	local start_ns = vim.api.nvim_create_namespace("mssql_last_query_start")
 	local end_ns = vim.api.nvim_create_namespace("mssql_last_query_end")
 	local start_id = vim.api.nvim_buf_set_extmark(bufnr, start_ns, start_line, start_col, {
