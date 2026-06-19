@@ -68,21 +68,21 @@ local customized_handlers = {
 	end),
 
 	["query/message"] = make_handler("query/message", function(_, result)
-		if not (result or result.message or result.message.message) then
+		if utils.is_empty(result) or utils.is_empty(result.message) or utils.is_empty(result.message.message) then
 			return
 		end
 		state.get_config().view_messages_in(result.message.message, result.message.isError)
 	end),
 
 	["connection/connectionchanged"] = make_handler("connection/connectionchanged", function(_, result, _)
-		if not result.ownerUri then return end
+		if utils.is_empty(result) or utils.is_empty(result.ownerUri) then return end
 		local bufnr = vim.iter(vim.api.nvim_list_bufs()):find(function(buf)
 			return utils.lsp_file_uri(buf) == result.ownerUri
 		end)
 
 		if not bufnr then return end
 		local qm = state.get_query_manager(bufnr)
-		if not (result and result.connection and qm) then return end
+		if utils.is_empty(result) or utils.is_empty(result.connection) or not qm then return end
 
 		coroutine.resume(coroutine.create(function()
 			qm:connectionchanged_async(result)

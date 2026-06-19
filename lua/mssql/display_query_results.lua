@@ -358,8 +358,10 @@ function M.display_query_results(opts, result)
 		end
 	end
 
+	if utils.is_empty(result) or utils.is_empty(result.batchSummaries) then return end
+
 	for batch_index, batch_summary in ipairs(result.batchSummaries) do
-		if not batch_summary.hasError and batch_summary.resultSetSummaries then
+		if not utils.is_empty(batch_summary) and not batch_summary.hasError and not utils.is_empty(batch_summary.resultSetSummaries) then
 			for result_set_index, result_set_summary in ipairs(batch_summary.resultSetSummaries) do
 				local subset_params = {
 					ownerUri = result.ownerUri,

@@ -65,6 +65,14 @@ M.wait_for_schedule_async = function()
 	coroutine.yield()
 end
 
+--- Safely checks if a value is nil or Neovim's explicit null representation (vim.NIL)
+--- Use this when evaluating fields returned from LSP responses.
+---@param val any
+---@return boolean
+M.is_empty = function(val)
+	return val == nil or val == vim.NIL
+end
+
 
 ---Like assert, but doesn't prepend the
 ---file name and line number
@@ -146,6 +154,10 @@ M.get_rows_async = function(subset_params)
 			error("Error getting rows: " .. vim.inspect(err), 0)
 		elseif not result then
 			error("Error getting rows", 0)
+		end
+
+		if M.is_empty(result.resultSubset) or M.is_empty(result.resultSubset.rows) then
+			return {}
 		end
 
 		return vim.iter(result.resultSubset.rows)
@@ -293,6 +305,10 @@ end
 
 --- Executes a query and returns all the results in the first batch and result set as a table of rows
 M.get_query_result_async = function(query_result_summary)
+	if M.is_empty(query_result_summary) or M.is_empty(query_result_summary.batchSummaries) or M.is_empty(query_result_summary.batchSummaries[1]) then
+		error("Query result is invalid or empty", 0)
+	end
+
 	if query_result_summary.batchSummaries[1].hasError then
 		error("Query thew an error", 0)
 	end
