@@ -7,7 +7,7 @@ return {
 		local buf, _, qm, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
 		local query = "USE TestDbB;"
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 
 		local current_db = ""
 		local switch_success = test_utils.poll(function()

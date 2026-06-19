@@ -7,7 +7,7 @@ return {
 		local buf, _, _, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
 		local query = "SELECT 1 AS FirstResult; SELECT 2 AS SecondResult;"
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 
 		local results_map = test_utils.wait_for_multiple_result_buffers(2, { timeout_ms = 10000 })
 

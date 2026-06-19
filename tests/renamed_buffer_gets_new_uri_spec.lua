@@ -19,7 +19,7 @@ return {
 		local query = "SELECT * from TestDbB.dbo.Car"
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
 
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 		local res_buf, _, _ = test_utils.res_buf_catcher()
 		assert(res_buf, "Results buffer did not appear (Query likely failed).")
 
@@ -34,7 +34,7 @@ return {
 		end)
 		assert(reconnected, "Did not auto-reconnect after rename")
 
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 		local new_res_buf, status, results = test_utils.res_buf_catcher()
 	assert(status and results:find("Merc"), "Query results verification failed after reconnect.")
 		test_utils.cleanup_results_buffer(new_res_buf)

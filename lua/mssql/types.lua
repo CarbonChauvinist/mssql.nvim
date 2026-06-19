@@ -278,4 +278,9 @@
 ---@field backup_database fun() Script a database backup
 ---@field restore_database fun() Script a database restore
 
+---@class MssqlExecutionOptions
+---@field rerun_last? boolean If true, return the last query selection instead of getting the current selection
+---@field highlight? boolean If true, re-highlight the last selection when rerunning
+---@field buffer_only? boolean If true, execute entire buffer instead of current selection
+
 return {}

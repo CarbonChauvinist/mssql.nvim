@@ -8,7 +8,7 @@ return {
 
 		local query = "SELECT * from TestDbA.dbo.Person join TestDbB.dbo.Car on Person.ID = Car.PersonId"
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 
 		local res_buf, _, results = test_utils.res_buf_catcher()
 		assert(res_buf, "Results buffer did not appear (Query likely failed).")

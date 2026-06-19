@@ -11,7 +11,7 @@ return {
 		-- test live query execution stats
 		local query_long = "WAITFOR DELAY '00:00:03'; SELECT 1 AS Test;"
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query_long })
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 
 		local select_status
 		local live_query_stats = test_utils.poll(function()
@@ -32,7 +32,7 @@ return {
 		-- test DML
 		local query_update = "SELECT * INTO #test_temp FROM (VALUES (1), (2)) AS t(c); UPDATE #test_temp SET c = c + 1;"
 		vim.api.nvim_buf_set_lines(buf, 1, -1, false, { query_update })
-		mssql.execute_query(buf)
+		mssql.execute_query({ bufnr = buf })
 
 		local dml_finished = test_utils.poll(function()
 			return qm:get_state() == qm.states.connected

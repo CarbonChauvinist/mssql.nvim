@@ -223,11 +223,13 @@ M.disconnect = function(bufnr)
 	end))
 end
 
----@overload fun()
----@overload fun(bufnr: integer)
----@param bufnr? integer
-M.execute_query = function(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
+---@param opts? MssqlExecuteOptions
+M.execute_query = function(opts)
+	opts = opts or {}
+
+	local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
+	local rerun = opts.rerun_last == true
+
 	local qm = state.get_query_manager(bufnr)
 	if not qm then
 		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")

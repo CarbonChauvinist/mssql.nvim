@@ -8,7 +8,7 @@ return {
 
     local query = "WAITFOR DELAY '00:00:03' SELECT 1 AS test"
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
-    mssql.execute_query(buf)
+    mssql.execute_query({ bufnr = buf })
 
 	-- sanity check, verify we actually executed query in first place
 	local executing = test_utils.poll(function()
