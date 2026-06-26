@@ -67,6 +67,20 @@ local customized_handlers = {
 		return result, err
 	end),
 
+	["query/batchstart"] = make_handler("query/batchstart", function(_, result)
+		if utils.is_empty(result) or utils.is_empty(result.batchSummary) or utils.is_empty(result.batchSummary.selection) then
+			return
+		end
+		local selection = result.batchSummary.selection
+		local start_line = (selection.startLine or 0) + 1
+		local _batch_id = (result.batchSummary.id or 0) + 1
+		local msg = string.format("Started executing query at Line %d", start_line)
+		local config = state.get_config()
+		if config and config.view_messages_in then
+			config.view_messages_in(msg, false)
+		end
+	end),
+
 	["query/message"] = make_handler("query/message", function(_, result)
 		if not (result or result.message or result.message.message) then
 			return
