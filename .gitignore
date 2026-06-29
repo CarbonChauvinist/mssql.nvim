@@ -3,3 +3,4 @@
 /lua.bat
 /lua_modules
 /.luarocks
+/test_lsp.log
