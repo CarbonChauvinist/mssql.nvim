@@ -7,6 +7,12 @@ local function setup_env()
 	vim.opt.shortmess:append("c")
 
 	vim.lsp.log.set_level(vim.log.levels.DEBUG)
+
+	-- Silence treesitter parser missing warnings during headless tests
+	pcall(function()
+		---@diagnostic disable-next-line: duplicate-set-field
+		vim.treesitter.start = function() end
+	end)
 end
 
 local function print_msg(msg)
