@@ -41,14 +41,14 @@ return {
 			end
 		}
 
-		local opts = { server = "MyServer", database = "MyUserDb", user = "sa" }
+		local conn_opts = { server = "MyServer", database = "MyUserDb", user = "sa" } --[[@as MssqlConnectionOptions]]
 
 		-- test 1 database sope (default)
 		-- expect cache key contains db, createSession params contains db
 		state._reset_all_state()
 		captured_create_params = {}
 
-		finder.initialise_cache_async(mock_client, opts, "database", true)
+		finder.initialise_cache_async(mock_client, conn_opts, { scope = "database", force = true })
 		test_utils.poll(function()
 			return #captured_create_params > 0
 		end, {timeout_ms = 1000})
@@ -58,12 +58,20 @@ return {
 
 		local cache = finder.get_cache()
 		local db_key_found = false
-		for k, _ in pairs(cache) do
-			if k:match("|database$") and k:match('"database":"MyUserDb"') then
+		local db_scope_set = false
+
+		for k, v in pairs(cache) do
+			if k == finder.create_cache_key(conn_opts, "database") then
 				db_key_found = true
+				local conn_opts = v.connection_options or {}
+				local finder_scope = v.scope or ""
+				if finder_scope == "database" and (conn_opts.database and conn_opts.database == conn_opts.database) then
+					db_scope_set = true
+				end
 			end
 		end
-		assert(db_key_found, "Database scope: Cache key should include database name and |database suffix")
+		assert(db_key_found, "Database scope: Cache key should include database name")
+		assert(db_scope_set, "Database scope: Cache value should have scope field set to 'database'")
 
 
 		-- test 2 server scope
@@ -71,7 +79,7 @@ return {
 		state._reset_all_state()
 		captured_create_params = {}
 
-		finder.initialise_cache_async(mock_client, opts, "server", true)
+		finder.initialise_cache_async(mock_client, conn_opts, { scope = "server", force = true })
 		test_utils.poll(function()
 			return #captured_create_params > 0
 		end, {timeout_ms = 1000})
@@ -82,11 +90,17 @@ return {
 
 		cache = finder.get_cache()
 		local server_key_found = false
-		for k, _ in pairs(cache) do
-			if k:match("|server$") and not k:match('"database":') then
+		local server_scope_set = false
+		for k, v in pairs(cache) do
+			if k == finder.create_cache_key(conn_opts, "server") then
 				server_key_found = true
+				local finder_scope = v.scope or ""
+				if finder_scope == "server" then
+					server_scope_set = true
+				end
 			end
 		end
 		assert(server_key_found, "Server scope: Cache key should NOT include database name and have |server suffix")
+		assert(server_scope_set, "Server scope: Cache value should have scope field set to 'server'")
 	end,
 }

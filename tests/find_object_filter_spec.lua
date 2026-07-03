@@ -80,13 +80,13 @@ return {
 		}
 
 		-- configure filters
-		local opts = {
+		local conn_opts = {
 			server = "MyServer",
 			databaseAllowList = { "Allowed.*" },
 			databaseDenyList = { "Denied.*" }
-		}
+		} --[[@as MssqlConnectionOptions]]
 
-		finder.initialise_cache_async(mock_client, opts, "server", true)
+		finder.initialise_cache_async(mock_client, conn_opts, { scope = "server", force = true })
 
 		-- test 1: allowed db
 		local found = test_utils.wait_for_cache_content("TableInAllowedDb", {debug = true, timeout = 10000 })

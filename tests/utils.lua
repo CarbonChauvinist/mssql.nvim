@@ -509,7 +509,16 @@ M.test_scaffold = function(opts)
 	if not qm then
 		error("Query manager not found on buffer.")
 	end
-	qm:initialise_cache_async("database", true)
+	qm:initialise_cache_async({ scope = "database", force = true })
+
+	-- Fix for test suite/harness operability
+	-- Uncleared Coroutine Reference in test suite: Once get_object_cache_async finishes, the refresh_coroutine reference is not cleared.
+	-- In standard operation, the ephemeral coroutine dies, and its status automatically becomes "dead".
+	-- However, because the test runner's coroutine remains alive and continues executing the tests, is_refreshing() continues to return true .
+	local find_object = require("mssql.find_object")
+	for _, entry in pairs(find_object.get_cache()) do
+		entry.refresh_coroutine = nil
+	end
 
 	return buf, client, qm, cleanup
 end

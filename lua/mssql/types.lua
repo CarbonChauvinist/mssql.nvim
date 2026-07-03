@@ -7,6 +7,7 @@
 ---@alias ConnectionKey string
 ---@alias MssqlQueryManagerState "disconnected" | "connecting" | "connected" | "executing" | "cancelling"
 ---@alias StateTransitionTable table<MssqlQueryManagerState, MssqlQueryManagerState[]>
+---@alias FindObjectScope "server" | "database"
 
 ---@class NodeActionConfig
 ---@field default MssqlActionId The default action ID (e.g. "create")
@@ -43,7 +44,9 @@
 ---@class GlobalCacheEntry
 ---@field cache? MssqlNode[]
 ---@field cancellation_token? { cancel: boolean, cleanup_callback: function }
+---@field connection_options? MssqlConnectionOptions
 ---@field refresh_coroutine? thread
+---@field scope? string
 
 ---@class MssqlIconsStatusLine
 ---@field enabled boolean?
@@ -217,7 +220,7 @@
 ---@field last_execution fun(self: MssqlQueryManager): MssqlExecutionInfo
 ---@field update_connection_params fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult): boolean
 ---@field connectionchanged_async fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult)
----@field initialise_cache_async fun(self: MssqlQueryManager, scope: string?, force?: boolean): boolean
+---@field initialise_cache_async fun(self: MssqlQueryManager, opts?: FindObjectOpts): boolean
 ---@field find_async fun(self: MssqlQueryManager, scope: string?, object_type: string?): {script: string, select: boolean }?
 ---@field is_refreshing fun(self: MssqlQueryManager): boolean?
 ---@field handle_query_complete fun(self: MssqlQueryManager, result: MssqlQueryExecuteSubsetResult)
@@ -257,10 +260,12 @@
 ---@field keymaps table<string, MssqlActionId> Key chords mapped to Intent IDs (e.g. { ["<M-c>"] = "create" })
 
 ---@class FindObjectOpts
----@field scope? "server"|"database" Scope of search (defaults to "database")
+---@field scope? FindObjectScope Scope of search (defaults to "database")
 ---@field object_type? "t"|"v"|"p"|"f" Filter by type (table, view, proc, func)
 ---@field bufnr? integer Target buffer (defaults to current)
 ---@field callback? fun() Function to run after selection
+---@field timeout_ms? integer Optional timeout in milliseconds (default: 10000)
+---@field force? boolean Optional Get a new cache and overwrite
 
 ---@class MssqlModule
 ---@field setup fun(opts?: MssqlConfig) Setup the plugin

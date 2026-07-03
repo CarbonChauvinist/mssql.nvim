@@ -46,12 +46,12 @@ return {
 			end,
 		}
 
-		local connection_options = {
+		local conn_opts = {
 			server = "localhost",
 			database = "tempdb"
-		}
+		} --[[@as MssqlConnectionOptions]]
 
-		local success = finder.initialise_cache_async(mock_client, connection_options, true, TEST_TIMEOUT_MS)
+		local success = finder.initialise_cache_async(mock_client, conn_opts, { force = true })
 		if state._reset_all_state then state._reset_all_state() end
 		assert(success == false, "Function should have returned false (failed) due to timeout.")
 

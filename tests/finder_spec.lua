@@ -24,7 +24,15 @@ return {
 		local status, _ = pcall(test_utils.wait_for_cache_content, "dbo.Car", { type = "Table", timeout = 15000})
 		if not status then
 			print("    [INFO] Cache cold/empty. Retrying initialization...")
-			qm:initialise_cache_async("database", true)
+			qm:initialise_cache_async({ scope = "database", force = true })
+
+			-- even though we clear the refresh_coroutines in test_scaffold
+			-- must still clear refresh_coroutine explicitly here after call to qm:initialise_cache_async
+			-- since tests run directly inside test runners coroutine, any coroutine.running() calls return the test runner's coroutine
+			for _, entry in pairs(require("mssql.find_object").get_cache()) do
+				entry.refresh_coroutine = nil
+			end
+
 			test_utils.wait_for_cache_content("dbo.Car", { type = "Table", timeout = 30000 })
 		end
 		test_utils.wait_for_cache_content("dbo.Car", { type = "Table" })

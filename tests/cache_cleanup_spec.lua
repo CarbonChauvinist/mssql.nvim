@@ -8,7 +8,7 @@ return {
 		-- disconnect test
 		do
 			local buf, _, qm, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
-			qm:initialise_cache_async(true)
+			qm:initialise_cache_async({force = true})
 
 			local cache_populated = test_utils.poll(function()
 				local cache = finder.get_cache()
@@ -33,7 +33,7 @@ return {
 		-- buffer delete test
 		do
 			local _, _, qm, cleanup = test_utils.test_scaffold({ target_db = "TestDbB" })
-			qm:initialise_cache_async(true)
+			qm:initialise_cache_async({ force = true })
 
 			local testdb_cached = test_utils.poll(function()
 				local cache = finder.get_cache()

@@ -89,7 +89,7 @@ return {
     }
 
     -- TEST CONFIGURATION
-    local opts = {
+    local conn_opts = {
       server = "MyServer",
       database = "TestDb",
       objectFilters = {
@@ -107,9 +107,9 @@ return {
           allow = { "api.*" },
         },
       },
-    }
+    } --[[@as MssqlConnectionOptions]]
 
-    finder.initialise_cache_async(mock_client, opts, "database", true)
+    finder.initialise_cache_async(mock_client, conn_opts, { scope = "database", force = true })
 
     -- ASSERTIONS
     -- 1. Tables

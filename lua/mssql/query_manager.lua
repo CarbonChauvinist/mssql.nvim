@@ -471,16 +471,15 @@ end
 -- Passthroughs to Finder (passing client/params explicility)
 
 --- Initialize cache for finder
----@param scope string? Optional ("server" | "database"). Defaults to "database".
----@param force boolean? Get a new cache and overwrite.
+---@param opts? FindObjectOpts
 ---@return boolean success
-function MssqlQueryManager:initialise_cache_async(scope, force)
-	if not scope or (scope ~= "server" and scope ~= "database") then
-		scope = "database"
-	end
+function MssqlQueryManager:initialise_cache_async(opts)
+	opts = opts or {}
+	local scope = opts.scope or "database"
+	local force = opts.force or false
 
-	local options = self:get_connection_options()
-	if not options then
+	local conn_opts = self:get_connection_options()
+	if not conn_opts then
 		utils.log_warn("Cannot initialize cache: not connected")
 		return false
 	end
@@ -488,8 +487,7 @@ function MssqlQueryManager:initialise_cache_async(scope, force)
 	return finder.initialise_cache_async(
 		self.client,
 		self.last_connect_params.connection.options,
-		scope,
-		force
+		{ scope = scope, force = force }
 	)
 end
 
@@ -520,7 +518,7 @@ function MssqlQueryManager:is_refreshing()
 	local options = self:get_connection_options()
 	if not options then return nil end
 
-	return finder.is_refreshing(options)
+	return finder.is_refreshing(options, "database") or finder.is_refreshing(options, "server")
 end
 
 --- Handlers (called by LSP callbacks)

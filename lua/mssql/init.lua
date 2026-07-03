@@ -162,6 +162,7 @@ M.connect = function(bufnr)
 		if cmds.perform_connect_async(curr_conf, qm, bufnr) then
 			qm:initialise_cache_async()
 		end
+		autocmds.clean_cache()
 	end))
 end
 
@@ -191,7 +192,7 @@ M.refresh_cache = function(bufnr)
 	vim.cmd("redrawstatus")
 
 	coroutine.resume(coroutine.create(function()
-		qm:initialise_cache_async(true)
+		qm:initialise_cache_async({ force = true })
 		ui.set_caching_status(false)
 		vim.cmd("redrawstatus")
 	end))
@@ -366,7 +367,7 @@ M.find_object = function(opts)
 		ui.set_caching_status(true)
 		vim.cmd("redrawstatus")
 
-		local success = qm:initialise_cache_async(scope)
+		local success = qm:initialise_cache_async({ scope = scope })
 
 		ui.set_caching_status(false)
 		vim.cmd("redrawstatus")

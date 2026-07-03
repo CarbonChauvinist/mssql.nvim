@@ -85,20 +85,6 @@ local function escape_pattern(text)
 	return text:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
 end
 
---- Generates a consistent cache key.
---- For 'server' scope, strip the specific database name so the cache is shared
---- across all DBs on the same server instance.
----@param opts MssqlConnectionOptions
----@param scope string
----@return string
-local function get_cache_key(opts, scope)
-	local key_opts = vim.deepcopy(opts)
-	if scope == "server" then
-		key_opts.database = nil
-		key_opts.databaseDisplayName = nil
-	end
-	return vim.json.encode(key_opts) .. "|" .. scope
-end
 
 ---Resolves a user config entry (string or table) to an internal action definition
 ---@param user_entry MssqlActionId|MssqlActionEntry
@@ -249,11 +235,13 @@ end
 ---@param lsp_client vim.lsp.Client
 ---@param connection_options MssqlConnectionOptions
 ---@param cancellation_token { cancel: boolean, cleanup_callback: function }
----@param scope string? Optional ("server" | "database"). Defaults to "database".
----@param timeout_ms integer? Optional timeout in milliseconds (default: 10000)
+---@param opts? FindObjectOpts
 ---@return MssqlNode[] | boolean? result Returns false or nil on failure/timeout
 ---@return string? msg
-local get_object_cache_async = function(lsp_client, connection_options, cancellation_token, scope, timeout_ms)
+local get_object_cache_async = function(lsp_client, connection_options, cancellation_token, opts)
+	opts = opts or {}
+	local scope = opts.scope or "database" --[[@as FindObjectScope]]
+	local timeout_ms = opts.timeout_ms or 10000
 
 	if not scope or type(scope) ~= "string" or (scope ~= "database" and scope ~= "server") then
 		scope = "database"
@@ -610,14 +598,39 @@ local pick_item_async = function(cache, title)
 	return coroutine.yield()
 end
 
+--- Generates a deterministic lookup key for connection options.
+--- This prevents key collisions between server and database scopes.
+---@param opts MssqlConnectionOptions
+---@param scope? FindObjectScope
+---@return ConnectionKey
+M.create_cache_key = function(opts, scope)
+	local server = opts.server or "localhost"
+	local user = opts.user or ""
+	local auth = opts.authenticationType or "SqlLogin"
+	scope = scope or "database"
+
+	-- append scope to global-cache-key to prevent collisions
+	-- e.g. connecting and not specifying a database, which defaults to master,
+	-- would lead to server-scope cache overwriting database-scoped cache
+	-- as each would have same key (server|master|user|auth)
+	if scope == "server" then
+		return string.format("%s|%s|%s|server", server, user, auth)
+	else
+		local db = opts.database or "master"
+		return string.format("%s|%s|%s|%s|database", server, db, user, auth)
+	end
+end
+
 -- Initialises the cache, unless it already exists
 -- If force is true, then gets a new cache and overwrites
 ---@param lsp_client vim.lsp.Client
----@param connection_options MssqlConnectionOptions
----@param scope? string
----@param force? boolean
+---@param conn_opts MssqlConnectionOptions
+---@param opts? FindObjectOpts
 ---@return boolean success
-M.initialise_cache_async = function(lsp_client, connection_options, scope, force)
+M.initialise_cache_async = function(lsp_client, conn_opts, opts)
+	opts = opts or {}
+	local scope = opts.scope or "database"
+	local force = opts.force or false
 	if not scope or type(scope) ~= "string" or (scope ~= "server" and scope ~= "database") then
 		scope = "database"
 	end
@@ -627,13 +640,12 @@ M.initialise_cache_async = function(lsp_client, connection_options, scope, force
 	local timeout_sec = (timeouts and timeouts[scope]) or ((scope == "server") and 180 or 90)
 	local timeout_ms = timeout_sec * 1000
 
-	if type(force) ~= "boolean" or not force then
-		force = false
-	end
-
-	local key = get_cache_key(connection_options, scope) --[[@as ConnectionKey]]
+	local key = M.create_cache_key(conn_opts, scope) --[[@as ConnectionKey]]
 	if not global_cache[key] then
-		global_cache[key] = {}
+		global_cache[key] = {
+			connection_options = vim.deepcopy(conn_opts),
+			scope = scope,
+		}
 	end
 
 	-- don't refresh if we are already refreshing or have refreshed previously
@@ -642,14 +654,19 @@ M.initialise_cache_async = function(lsp_client, connection_options, scope, force
 	end
 
 	-- cancel any currently running
-	M.cancel_refresh(connection_options, scope)
+	M.cancel_refresh(conn_opts, scope)
 
 	local cancellation_token = { cancel = false }
 	global_cache[key].cancellation_token = cancellation_token
 
 	global_cache[key].refresh_coroutine = coroutine.running()
 	vim.cmd("redrawstatus")
-	local new_cache, err = get_object_cache_async(lsp_client, connection_options, cancellation_token, scope, timeout_ms)
+	local new_cache, err = get_object_cache_async(
+		lsp_client,
+		conn_opts,
+		cancellation_token,
+		{ scope = scope, timeout_ms = timeout_ms } --[[@as FindObjectOpts]]
+	)
 	if err then
 		if not err:match("Cancelled") then
 			utils.log_warn("Cache initialization failed: " .. tostring(err))
@@ -665,7 +682,7 @@ end
 
 ---@param connection_options MssqlConnectionOptions
 ---@param lsp_client vim.lsp.Client
----@param scope string? Optional scope ("server" | "database"). Defaults to "database".
+---@param scope? FindObjectScope Optional scope ("server" | "database"). Defaults to "database".
 ---@param filter_char string? Optional type of object to filter picker for ("t", "v", "f", "p").
 ---@return { script: string, select: boolean }?
 M.find_async = function(connection_options, lsp_client, scope, filter_char)
@@ -678,7 +695,7 @@ M.find_async = function(connection_options, lsp_client, scope, filter_char)
 		scope = "database"
 	end
 
-	local key = get_cache_key(connection_options, scope) --[[@as ConnectionKey]]
+	local key = M.create_cache_key(connection_options, scope) --[[@as ConnectionKey]]
 	---@type MssqlNode[]
 
 	local cache = (global_cache[key] and global_cache[key].cache) or {}
@@ -745,21 +762,38 @@ M.find_async = function(connection_options, lsp_client, scope, filter_char)
 	return generate_script_async(item, lsp_client, chosen_action)
 end
 
+--- Checks if a cached connection is currently in use by any active buffer.
+---@param cache_opts MssqlConnectionOptions The connection options stored in the cache.
+---@param in_use_connections MssqlConnectionOptions[] List of connection options currently active.
+---@param scope? FindObjectScope The scope of the cache entry.
+---@return boolean in_use True if the cached connection matches any active connection.
+local is_connection_in_use = function(cache_opts, in_use_connections, scope)
+	for _, conn in ipairs(in_use_connections) do
+		local server_match = conn.server == cache_opts.server
+			and conn.user == cache_opts.user
+			and conn.authenticationType == cache_opts.authenticationType
+
+		if server_match then
+			if scope == "server" then
+				return true
+			elseif scope == "database" and conn.database == cache_opts.database then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+
 ---@param in_use_connections MssqlConnectionOptions[]
 M.delete_unused_cache = function(in_use_connections)
-	-- convert to keys first
-	local in_use = {}
-	for _, in_use_connection in ipairs(in_use_connections) do
-		---@type ConnectionKey|MssqlConnectionOptions
-		local key = in_use_connection
-		if type(key) == "table" then
-			key = vim.json.encode(key)
-		end
-		in_use[key] = true
-	end
 
 	for cache_key, entry in pairs(global_cache) do
-		if not in_use[cache_key] then
+		local in_use = false
+		if entry.connection_options and entry.scope then
+			in_use = is_connection_in_use(entry.connection_options, in_use_connections, entry.scope)
+		end
+		if not in_use then
 			if entry.cancellation_token then
 				entry.cancellation_token.cancel = true
 			end
@@ -768,12 +802,14 @@ M.delete_unused_cache = function(in_use_connections)
 	end
 end
 
----@param connection_options MssqlConnectionOptions|string
+---@param connection_options MssqlConnectionOptions|ConnectionKey
+---@param scope? FindObjectScope
 ---@return boolean?
-M.is_refreshing = function(connection_options)
+M.is_refreshing = function(connection_options, scope)
 	local key = connection_options
 	if type(key) == "table" then
-		key = vim.json.encode(connection_options)
+		if not scope then scope = "database" end
+		key = M.create_cache_key(connection_options --[[@as MssqlConnectionOptions]], scope)
 	end
 
 	return (
@@ -790,10 +826,10 @@ M.get_cache = function()
 end
 
 ---@param connection_options MssqlConnectionOptions
----@param scope string?
+---@param scope FindObjectScope
 M.cancel_refresh = function(connection_options, scope)
 	if not scope then scope = "database" end
-	local key = get_cache_key(connection_options, scope)
+	local key = M.create_cache_key(connection_options, scope)
 
 	if global_cache[key] and global_cache[key].cancellation_token then
 		local token = global_cache[key].cancellation_token

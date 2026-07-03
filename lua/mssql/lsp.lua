@@ -2,7 +2,7 @@ local qmm = require("mssql.query_manager")
 local state = require("mssql.state")
 local utils = require("mssql.utils")
 
---- Sanitizes nulllable completion item fields to prevent sorting and validation crashes.
+--- Sanitizes nullable completion item fields to prevent sorting and validation crashes.
 ---
 --- Converts `vim.NIL` values to standard Lua `nil` on sorting/display fields
 --- (detail, documentation, sortText, filterText) inside completion items.

@@ -47,9 +47,9 @@ return {
 			end
 		}
 
-		local opts = { server = "S", database = "D" }
+		local conn_opts = { server = "S", database = "D" } --[[@as MssqlConnectionOptions]]
 
-		local success1 = finder.initialise_cache_async(mock_client, opts, "database", true)
+		local success1 = finder.initialise_cache_async(mock_client, conn_opts, {scope = "database", force = true })
 		assert(success1, "First refresh should succeed")
 
 		local found1 = test_utils.wait_for_cache_content("Table1", {
@@ -61,7 +61,8 @@ return {
 		local cache = finder.get_cache()
 		local targeted_cache
 		for k, v in pairs(cache) do
-			if k:find('"server":"S"') and k:find('"database":"D"') then
+			if k == finder.create_cache_key(conn_opts, "database") then
+			-- if k:find('"server":"S"') and k:find('"database":"D"') then
 				targeted_cache = v
 				break
 			end
@@ -71,7 +72,7 @@ return {
 
 		-- run 2 if duplicate listeners bug exists this will cause two listeners
 		-- to fire on the single event, pushing "Table1" into the cache twice
-		local success2 = finder.initialise_cache_async(mock_client, opts, "database", true)
+		local success2 = finder.initialise_cache_async(mock_client, conn_opts, {scope = "database", force = true })
 		assert(success2, "Second refresh command started successfully")
 
 		local found2 = test_utils.wait_for_cache_content("Table1", {

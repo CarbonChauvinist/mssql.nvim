@@ -10,7 +10,7 @@ return {
         --   global LSP handler, rendering Refresh #5 (the active one) deaf to responses.
         print("Simulating rapid refresh spam (5x)...")
         for _ = 1, 5 do
-            qm:initialise_cache_async("database", true)
+            qm:initialise_cache_async({ scope = "database", force = true })
             vim.wait(50)
         end
 
