@@ -255,6 +255,11 @@ M.perform_connect_async = function(opts, query_manager, bufnr)
 		con.password = vim.fn.inputsecret("password for " .. (con.server or ""))
 	end
 
+	-- disconnect first to clean up old connection and state
+	if query_manager:get_state() == query_manager.states.connected then
+		query_manager:disconnect_async()
+	end
+
 	local connectParams = {
 		connection = {
 			options = con,
