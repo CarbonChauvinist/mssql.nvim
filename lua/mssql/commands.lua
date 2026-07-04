@@ -223,7 +223,7 @@ M.switch_database_async = function(bufnr)
 		)
 		, { prompt = "Choose database" }
 	)
-	utils.safe_assert(db, "No database chosen")
+	if not db then return end
 
 
 	qm:disconnect_async()

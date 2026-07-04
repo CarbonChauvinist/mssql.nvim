@@ -88,21 +88,18 @@ local function setup_async(user_opts)
 	autocmds.setup(opts)
 end
 
-M.new_query = function()
-	utils.try_resume(coroutine.create(function()
+M.new_query = utils.async(function()
 		ui.new_query_async()
-	end))
-end
+	end)
 
 -- Look for the connection called "default", prompt to choose a database in that server,
 -- connect to that database and open a new buffer for querying (very useful!)
-M.new_default_query = function()
+M.new_default_query = utils.async(function()
 	local curr_conf = get_config_or_warn()
 	if not curr_conf then return end
-	utils.try_resume(coroutine.create(function()
-		cmds.new_default_query_async(curr_conf)
-	end))
-end
+
+	cmds.new_default_query_async(curr_conf)
+end)
 
 --- Prompts for a database to switch to that is on the currently connected server.
 ---@overload fun()
@@ -111,7 +108,7 @@ end
 ---@overload fun(bufnr: integer, callback: fun())
 ---@param bufnr? integer|fun() The buffer number, OR the callback if only one argument is passed.
 ---@param callback? fun() The callback to run after switching
-M.switch_database = function(bufnr, callback)
+M.switch_database = utils.async(function(bufnr, callback)
 	if type(bufnr) == "function" then
 		callback = bufnr
 		bufnr = nil
@@ -124,19 +121,17 @@ M.switch_database = function(bufnr, callback)
 		return
 	end
 
-	utils.try_resume(coroutine.create(function()
-		cmds.switch_database_async(bufnr)
-		qm:initialise_cache_async()
-		autocmds.clean_cache()
-		if callback then callback() end
-	end))
-end
+	cmds.switch_database_async(bufnr)
+	qm:initialise_cache_async()
+	autocmds.clean_cache()
+	if callback then callback() end
+end)
 
 --- Connect the current buffer (you'll be prompted to choose a connection).
 ---@overload fun()
 ---@overload fun(bufnr: integer)
 ---@param bufnr? integer
-M.connect = function(bufnr)
+M.connect = utils.async(function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 
 	if vim.api.nvim_buf_get_name(bufnr) == "" and vim.api.nvim_get_option_value("ft", {buf = bufnr}) == "sql" then
@@ -158,13 +153,11 @@ M.connect = function(bufnr)
 		return
 	end
 
-	utils.try_resume(coroutine.create(function()
-		if cmds.perform_connect_async(curr_conf, qm, bufnr) then
-			qm:initialise_cache_async()
-		end
-		autocmds.clean_cache()
-	end))
-end
+	if cmds.perform_connect_async(curr_conf, qm, bufnr) then
+		qm:initialise_cache_async()
+	end
+	autocmds.clean_cache()
+end)
 
 M.edit_connections = function()
 	local curr_conn = get_config_or_warn()
@@ -210,7 +203,7 @@ end
 ---@overload fun()
 ---@overload fun(bufnr: integer)
 ---@param bufnr? integer
-M.disconnect = function(bufnr)
+M.disconnect = utils.async(function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 	local qm = state.get_query_manager(bufnr)
 	if not qm then
@@ -218,14 +211,12 @@ M.disconnect = function(bufnr)
 		return
 	end
 
-	utils.try_resume(coroutine.create(function()
-		qm:disconnect_async()
-		autocmds.clean_cache()
-	end))
-end
+	qm:disconnect_async()
+	autocmds.clean_cache()
+end)
 
 ---@param opts? MssqlExecuteOptions
-M.execute_query = function(opts)
+M.execute_query = utils.async(function(opts)
 	opts = opts or {}
 
 	local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
@@ -237,103 +228,96 @@ M.execute_query = function(opts)
 		return
 	end
 
-	utils.try_resume(coroutine.create(function()
-		local query
+	local query
 
-		if rerun then
-			if not state.is_last_query_extmarks_valid() then
-				utils.log_error("No valid previous query selection found to rerun.")
-				return
-			end
-			local range = state.get_last_query_range_from_extmarks()
-			if not range then
-				utils.log_error("No previous query range found.")
-				return
-			end
-			local lines = vim.fn.getregion(range.start, range.end_, { mode = "v"})
-			query = table.concat(lines, "\n")
-			if not query or query == "" then
-				utils.log_error("No text found in previous selection range.")
-				return
-			end
-
-			if opts.highlight == true then
-				vim.fn.setpos("'<", range.start)
-				vim.fn.setpos("'>", range.end_)
-				vim.cmd.normal("gv")
-			end
-		else
-			query = utils.get_selected_text(bufnr)
+	if rerun then
+		if not state.is_last_query_extmarks_valid() then
+			utils.log_error("No valid previous query selection found to rerun.")
+			return
 		end
-
-		local curr_conf = get_config_or_warn()
-		if not curr_conf then return end
-		if qm:get_state() == qm.states.disconnected then
-			utils.log_error("Please connect first.")
+		local range = state.get_last_query_range_from_extmarks()
+		if not range then
+			utils.log_error("No previous query range found.")
+			return
+		end
+		local lines = vim.fn.getregion(range.start, range.end_, { mode = "v"})
+		query = table.concat(lines, "\n")
+		if not query or query == "" then
+			utils.log_error("No text found in previous selection range.")
 			return
 		end
 
-		ui.clear_message_buffer()
-		local result = qm:execute_async(query)
-		if result then -- since cancelled query returns nil, have to check for nil before displaying
-			display_query_results.display_query_results(curr_conf, result)
+		if opts.highlight == true then
+			vim.fn.setpos("'<", range.start)
+			vim.fn.setpos("'>", range.end_)
+			vim.cmd.normal("gv")
 		end
-	end))
-end
+	else
+		query = utils.get_selected_text(bufnr)
+	end
+
+	local curr_conf = get_config_or_warn()
+	if not curr_conf then return end
+	if qm:get_state() == qm.states.disconnected then
+		utils.log_error("Please connect first.")
+		return
+	end
+
+	ui.clear_message_buffer()
+	local result = qm:execute_async(query)
+	if result then -- since cancelled query returns nil, have to check for nil before displaying
+		display_query_results.display_query_results(curr_conf, result)
+	end
+end)
 
 ---@overload fun()
 ---@overload fun(bufnr: integer)
 ---@param bufnr? integer
-M.cancel_query = function(bufnr)
+M.cancel_query = utils.async(function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 	local qm = state.get_query_manager(bufnr)
 	if qm then
-		utils.try_resume(coroutine.create(function()
-			qm:cancel_async()
-		end))
+		qm:cancel_async()
 	end
-end
+end)
 
 
-M.backup_database = function(bufnr)
+M.backup_database = utils.async(function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 	local qm = state.get_query_manager(bufnr)
 	if not qm then return end
-	utils.try_resume(coroutine.create(function()
-		cmds.backup_database_async(qm)
-	end))
-end
+
+	cmds.backup_database_async(qm)
+end)
 
 
 ---@overload fun()
 ---@overload fun(bufnr: integer)
 ---@param bufnr? integer
-M.restore_database = function(bufnr)
+M.restore_database = utils.async(function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 	local qm = state.get_query_manager(bufnr)
 	if not qm then return end
-	utils.try_resume(coroutine.create(function()
-		cmds.restore_database_async(qm)
-	end))
-end
+
+	cmds.restore_database_async(qm)
+end)
 
 ---@overload fun()
 ---@overload fun(bufnr: integer)
 ---@param bufnr? integer
-M.save_query_results = function(bufnr)
+M.save_query_results = utils.async(function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 	local result_info = vim.b[bufnr].query_result_info
 	if not result_info then
 		utils.log_error("Go to a query result buffer to save results")
 		return
 	end
-	utils.try_resume(coroutine.create(function()
-		cmds.save_query_results_async(result_info)
-	end))
-end
+
+	cmds.save_query_results_async(result_info)
+end)
 
 ---@param opts? FindObjectOpts
-M.find_object = function(opts)
+M.find_object = utils.async(function(opts)
 	opts = opts or {}
 	local scope = utils.normalize_findobject_scope(opts.scope)
 	local object_type = opts.object_type
@@ -360,43 +344,41 @@ M.find_object = function(opts)
 	local curr_conf = get_config_or_warn()
 	if not curr_conf then return end
 
-	utils.try_resume(coroutine.create(function()
-		-- explicitly initialise cache for "database" scope
-		-- this ensures if we just switched databases we build a new cache
-		-- instead of showing an empty picker
-		ui.set_caching_status(true)
-		vim.cmd("redrawstatus")
+	-- explicitly initialise cache for "database" scope
+	-- this ensures if we just switched databases we build a new cache
+	-- instead of showing an empty picker
+	ui.set_caching_status(true)
+	vim.cmd("redrawstatus")
 
-		local success = qm:initialise_cache_async({ scope = scope })
+	local success = qm:initialise_cache_async({ scope = scope })
 
-		ui.set_caching_status(false)
-		vim.cmd("redrawstatus")
+	ui.set_caching_status(false)
+	vim.cmd("redrawstatus")
 
-		if not success then return end
+	if not success then return end
 
-		local item = qm:find_async(scope, object_type)
-		if not item then return end
+	local item = qm:find_async(scope, object_type)
+	if not item then return end
 
-		local target_buf = ui.insert_query_into_buffer(item.script)
-		if target_buf == 0 then target_buf = vim.api.nvim_get_current_buf() end
+	local target_buf = ui.insert_query_into_buffer(item.script)
+	if target_buf == 0 then target_buf = vim.api.nvim_get_current_buf() end
 
-		qm = state.get_query_manager(target_buf)
-		if not qm then return end
+	qm = state.get_query_manager(target_buf)
+	if not qm then return end
 
-		if curr_conf.execute_generated_select_statements and item.select then
-			ui.clear_message_buffer()
-			local result, err = qm:execute_async(item.script)
+	if curr_conf.execute_generated_select_statements and item.select then
+		ui.clear_message_buffer()
+		local result, err = qm:execute_async(item.script)
 
-			if result then
-				display_query_results.display_query_results(curr_conf, result)
-			elseif err then
-				utils.log_error("Failed to execute generated SELECT: " .. tostring(err))
-			end
+		if result then
+			display_query_results.display_query_results(curr_conf, result)
+		elseif err then
+			utils.log_error("Failed to execute generated SELECT: " .. tostring(err))
 		end
+	end
 
-		if callback then callback() end
-	end))
-end
+	if callback then callback() end
+end)
 
 M.lualine_component = ui.lualine_component
 
@@ -407,15 +389,14 @@ end
 --- Setup the plugin.
 ---@param opts MssqlConfig? User configuration options
 ---@param callback function? Optional callback to run after setup
-M.setup = function(opts, callback)
+M.setup = utils.async(function(opts, callback)
 	opts = opts or {}
-	utils.try_resume(coroutine.create(function()
-		setup_async(opts)
-		interface.set_user_commands(M)
-		interface.set_keymaps(opts.keymap_prefix, M)
-		if callback ~= nil then callback() end
-	end))
-end
+
+	setup_async(opts)
+	interface.set_user_commands(M)
+	interface.set_keymaps(opts.keymap_prefix, M)
+	if callback ~= nil then callback() end
+end)
 
 M.get_query_manager = state.get_query_manager
 

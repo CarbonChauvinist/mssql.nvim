@@ -528,4 +528,16 @@ M.normalize_findobject_scope = function(scope)
 	return "database"
 end
 
+--- Simple helper decorator to automatically wrap any async functions in coroutines.
+--- If already running inside a coroutine (e.g. in a test spec), it executes directly
+--- to preserve sequential yielding/blocking.
+---@param fn function
+---@return function
+M.async = function(fn)
+	return function(...)
+		local co = coroutine.create(fn)
+		M.try_resume(co, ...)
+	end
+end
+
 return M
