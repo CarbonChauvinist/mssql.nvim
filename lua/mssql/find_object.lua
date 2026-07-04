@@ -240,12 +240,8 @@ end
 ---@return string? msg
 local get_object_cache_async = function(lsp_client, connection_options, cancellation_token, opts)
 	opts = opts or {}
-	local scope = opts.scope or "database" --[[@as FindObjectScope]]
+	local scope = utils.normalize_findobject_scope(opts.scope)
 	local timeout_ms = opts.timeout_ms or 10000
-
-	if not scope or type(scope) ~= "string" or (scope ~= "database" and scope ~= "server") then
-		scope = "database"
-	end
 
 	local db_allow_list = connection_options and connection_options.databaseAllowList
 	local db_deny_list = connection_options and connection_options.databaseDenyList
@@ -607,7 +603,7 @@ M.create_cache_key = function(opts, scope)
 	local server = opts.server or "localhost"
 	local user = opts.user or ""
 	local auth = opts.authenticationType or "SqlLogin"
-	scope = scope or "database"
+	scope = utils.normalize_findobject_scope(scope)
 
 	-- append scope to global-cache-key to prevent collisions
 	-- e.g. connecting and not specifying a database, which defaults to master,
@@ -629,11 +625,8 @@ end
 ---@return boolean success
 M.initialise_cache_async = function(lsp_client, conn_opts, opts)
 	opts = opts or {}
-	local scope = opts.scope or "database"
+	local scope = utils.normalize_findobject_scope(opts.scope)
 	local force = opts.force or false
-	if not scope or type(scope) ~= "string" or (scope ~= "server" and scope ~= "database") then
-		scope = "database"
-	end
 
 	local config = state.get_config()
 	local timeouts = config and config.object_explorer_timeouts
@@ -690,10 +683,7 @@ M.find_async = function(connection_options, lsp_client, scope, filter_char)
 	if connection_options and connection_options.database and connection_options.server then
 		title = connection_options.server .. " | " .. connection_options.database
 	end
-
-	if not scope or type(scope) ~= "string" or (scope ~= "server" and scope ~= "database") then
-		scope = "database"
-	end
+	scope = utils.normalize_findobject_scope(scope)
 
 	local key = M.create_cache_key(connection_options, scope) --[[@as ConnectionKey]]
 	---@type MssqlNode[]
@@ -808,7 +798,7 @@ end
 M.is_refreshing = function(connection_options, scope)
 	local key = connection_options
 	if type(key) == "table" then
-		if not scope then scope = "database" end
+		scope = utils.normalize_findobject_scope(scope)
 		key = M.create_cache_key(connection_options --[[@as MssqlConnectionOptions]], scope)
 	end
 
@@ -828,7 +818,7 @@ end
 ---@param connection_options MssqlConnectionOptions
 ---@param scope FindObjectScope
 M.cancel_refresh = function(connection_options, scope)
-	if not scope then scope = "database" end
+	scope = utils.normalize_findobject_scope(scope)
 	local key = M.create_cache_key(connection_options, scope)
 
 	if global_cache[key] and global_cache[key].cancellation_token then

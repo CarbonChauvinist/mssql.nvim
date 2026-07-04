@@ -335,7 +335,7 @@ end
 ---@param opts? FindObjectOpts
 M.find_object = function(opts)
 	opts = opts or {}
-	local scope = opts.scope or "database"
+	local scope = utils.normalize_findobject_scope(opts.scope)
 	local object_type = opts.object_type
 	local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
 	local callback = opts.callback

@@ -516,4 +516,16 @@ M.edit_connections = function(opts)
 	vim.cmd.edit(opts.connections_file)
 end
 
+--- Helper function to check FindObject 'scope' validity and apply default values.
+--- Avoids having to check `scope` validity and apply default values
+--- on every entry point and internal helper.
+---@param scope? any
+---@return FindObjectScope
+M.normalize_findobject_scope = function(scope)
+	if type(scope) == "string" and (scope == "server" or scope == "database") then
+		return scope
+	end
+	return "database"
+end
+
 return M

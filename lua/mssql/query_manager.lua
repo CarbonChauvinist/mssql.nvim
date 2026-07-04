@@ -475,7 +475,7 @@ end
 ---@return boolean success
 function MssqlQueryManager:initialise_cache_async(opts)
 	opts = opts or {}
-	local scope = opts.scope or "database"
+	local scope = utils.normalize_findobject_scope(scope)
 	local force = opts.force or false
 
 	local conn_opts = self:get_connection_options()
@@ -495,9 +495,7 @@ end
 ---@param object_type string? Optional filter char ('t', 'v', 'f', 'p')
 ---@return { script: string, select: boolean }?
 function MssqlQueryManager:find_async(scope, object_type)
-	if not scope or (scope ~= "server" and scope ~= "database") then
-		scope = "database"
-	end
+	scope = utils.normalize_findobject_scope(scope)
 
 	local options = self:get_connection_options()
 	if not options then
