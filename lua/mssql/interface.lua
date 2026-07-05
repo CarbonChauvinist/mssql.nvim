@@ -1,6 +1,7 @@
 -- Handles how the user user interfaces with this plugin, i.e. keymaps and user commands
 local query_manager_module = require("mssql.query_manager")
 local utils = require("mssql.utils")
+local state = require("mssql.state")
 
 return {
 	---@param prefix string
@@ -112,24 +113,24 @@ return {
 
 			local normal_group = vim.tbl_deep_extend("keep", wkeygroup, {})
 			normal_group.expand = function()
-				local qm = vim.b.query_manager
+				local qm = state.get_query_manager()
 				if qm then
-					local state = qm.get_state()
+					local curr_state = qm:get_state()
 					local states = query_manager_module.states
-					if state == states.connecting then
+					if curr_state == states.connecting then
 						return {
 							keymaps.new_query,
 							keymaps.new_default_query,
 							keymaps.edit_connections,
 						}
-					elseif state == states.executing then
+					elseif curr_state == states.executing then
 						return {
 							keymaps.new_query,
 							keymaps.new_default_query,
 							keymaps.edit_connections,
 							keymaps.cancel_query,
 						}
-					elseif state == states.connected then
+					elseif curr_state == states.connected then
 						return {
 							keymaps.new_query,
 							keymaps.new_default_query,
@@ -145,7 +146,7 @@ return {
 							},
 							keymaps.find_object,
 						}
-					elseif state == states.disconnected then
+					elseif curr_state == states.disconnected then
 						return {
 							keymaps.new_query,
 							keymaps.new_default_query,
@@ -159,14 +160,14 @@ return {
 								icon = { icon = "", color = "green" },
 							},
 						}
-					elseif state == states.cancelling then
+					elseif curr_state == states.cancelling then
 						return {
 							keymaps.new_query,
 							keymaps.new_default_query,
 							keymaps.edit_connections,
 						}
 					else
-						utils.log_error("Entered unrecognised query state: " .. state)
+						utils.log_error("Entered unrecognised query state: " .. curr_state)
 						return {}
 					end
 				elseif vim.b.query_result_info then
@@ -188,12 +189,12 @@ return {
 			local visual_group = vim.tbl_deep_extend("keep", wkeygroup, {})
 			visual_group.mode = "v"
 			visual_group.expand = function()
-				local qm = vim.b.query_manager
+				local qm = state.get_query_manager()
 				if not qm then
 					return { keymaps.new_query, keymaps.new_default_query, keymaps.edit_connections }
 				end
 
-				local state = qm.get_state()
+				local state = qm:get_state()
 				local states = query_manager_module.states
 				if state == states.connecting or state == states.executing or state == states.disconnected then
 					return {}
@@ -272,7 +273,7 @@ return {
 				end
 			end
 
-			local qm = vim.b.query_manager
+			local qm = state.get_query_manager()
 			if vim.b.query_result_info then
 				return {
 					"NewQuery",
@@ -288,22 +289,22 @@ return {
 				}
 			end
 
-			local state = qm.get_state()
+			local curr_state = qm:get_state()
 			local states = query_manager_module.states
-			if state == states.connecting then
+			if curr_state == states.connecting then
 				return {
 					"NewQuery",
 					"NewDefaultQuery",
 					"EditConnections",
 				}
-			elseif state == states.executing then
+			elseif curr_state == states.executing then
 				return {
 					"NewQuery",
 					"NewDefaultQuery",
 					"EditConnections",
 					"CancelQuery",
 				}
-			elseif state == states.connected then
+			elseif curr_state == states.connected then
 				return {
 					"NewQuery",
 					"NewDefaultQuery",
@@ -317,21 +318,21 @@ return {
 					"Find",
 					"FindServer",
 				}
-			elseif state == states.disconnected then
+			elseif curr_state == states.disconnected then
 				return {
 					"NewQuery",
 					"NewDefaultQuery",
 					"EditConnections",
 					"Connect",
 				}
-			elseif state == states.cancelling then
+			elseif curr_state == states.cancelling then
 				return {
 					"NewQuery",
 					"NewDefaultQuery",
 					"EditConnections",
 				}
 			else
-				utils.log_error("Entered unrecognised query state: " .. state)
+				utils.log_error("Entered unrecognised query state: " .. curr_state)
 				return {}
 			end
 		end
