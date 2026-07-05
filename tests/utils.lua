@@ -7,40 +7,36 @@ local M = {}
 ---@type integer
 local next_mock_client_id = 10000
 
-local res_buf_pattern = "results %d?%d?%-%d?%d?.md$"
-
 -- Simple aliases for convenience.
 M.defer_async = utils.defer_async
 
 M.wait_for_notification_async = utils.wait_for_notification_async
 
---- Finds the first visible query results buffer (for single results set queries).
----@return integer? bufnr The buffer number, or nil if not found.
-local get_results_buffer = function()
-	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-		if vim.api.nvim_buf_is_valid(buf) then
-			local bufname = vim.api.nvim_buf_get_name(buf)
-			if bufname:match(res_buf_pattern) then
-				return buf
-			end
-		end
-	end
-	return nil
-end
+--- Finds either the first visible query results buffer when 'all' is false/nil (for single results set queries),
+--- or finds ALL visible query result buffers when 'all' is true (for multiple result set queries).
+---@overload fun(opts: { all: true }): integer[]|nil
+---@overload fun(opts?: { all?: false }): integer|nil
+---@param opts? GetResultsBufferOpts
+---@return integer[]|integer|nil buffers The matching results buffer(s), or nil if none found.
+local get_results_buffer = function(opts)
+	opts = opts or {}
 
---- Finds ALL visible query result buffers (for multiple result set queries).
----@return integer[] buffers Table containing buffer numbers, or empty table if none found.
-local function get_all_result_buffers()
-	local buffers = {}
-	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-		if vim.api.nvim_buf_is_valid(buf) then
-			local bufname = vim.api.nvim_buf_get_name(buf)
-			if bufname:match(res_buf_pattern) then
+	if opts.all then
+		local buffers = {}
+		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_is_valid(buf) and vim.b[buf].query_result_info ~= nil then
 				table.insert(buffers, buf)
 			end
 		end
+		return #buffers > 0 and buffers or nil
 	end
-	return buffers
+
+	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+		if vim.api.nvim_buf_is_valid(buf) and vim.b[buf].query_result_info ~= nil then
+			return buf
+		end
+	end
+	return nil
 end
 
 --- Waits for a buffer to contain at least one line of text (non-empty).
@@ -233,13 +229,13 @@ end
 M.wait_for_multiple_result_buffers = function(expected_count, opts)
 	opts = opts or {}
 	local timeout = opts.timeout_ms or 10000
-	local found_buffers = {}
+	local found_buffers
 
 	local attempts = 0
 	local max_attempts = math.ceil(timeout / 100)
 
 	while attempts < max_attempts do
-		found_buffers = get_all_result_buffers()
+		found_buffers = get_results_buffer( {all = true} ) or {} --[[ @as integer[] ]]
 		if #found_buffers >= expected_count then
 			break
 		end
@@ -247,6 +243,7 @@ M.wait_for_multiple_result_buffers = function(expected_count, opts)
 		attempts = attempts + 1
 	end
 
+	found_buffers = found_buffers or {} --[[ @as integer[] ]]
 	if #found_buffers < expected_count then
 		error(string.format("Timeout: Expected %d result buffers, but found %d.", expected_count, #found_buffers))
 	end
@@ -386,7 +383,7 @@ end
 --- Safely removes results buffer.
 ---@param results_buffer integer The results buffer to remove.
 M.cleanup_results_buffer = function(results_buffer)
-	if results_buffer and vim.api.nvim_buf_is_valid(results_buffer) then
+	if results_buffer and vim.api.nvim_buf_is_valid(results_buffer) and vim.b[results_buffer].query_result_info then
 		vim.api.nvim_buf_delete(results_buffer, {force = true})
 	end
 end

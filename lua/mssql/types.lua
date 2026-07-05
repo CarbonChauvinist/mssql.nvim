@@ -288,4 +288,7 @@
 ---@field highlight? boolean If true, re-highlight the last selection when rerunning
 ---@field buffer_only? boolean If true, execute entire buffer instead of current selection
 
+---@class GetResultsBufferOpts
+---@field all? boolean Return all matching buffers if true.
+
 return {}
