@@ -517,9 +517,11 @@ end
 
 ---@param item MssqlNode
 ---@param client vim.lsp.Client
----@param action_def MssqlResolvedAction? The resolved action definition
+---@param opts? { action_def?: MssqlResolvedAction, owner_uri?: string }
 ---@return { script: string, select: boolean }
-local generate_script_async = function(item, client, action_def)
+local generate_script_async = function(item, client, opts)
+	opts = opts or {}
+	local action_def = opts.action_def
 
 	local config = state.get_config() or {}
 
@@ -552,7 +554,7 @@ local generate_script_async = function(item, client, action_def)
 			typeOfDataToScript = "SchemaOnly",
 			scriptStatistics = "ScriptStatsNone",
 		},
-		ownerURI = utils.lsp_file_uri(0),
+		ownerURI = opts.owner_uri or utils.lsp_file_uri(0),
 		operation = action_def.op,
 	}
 
@@ -709,10 +711,12 @@ end
 
 ---@param connection_options MssqlConnectionOptions
 ---@param lsp_client vim.lsp.Client
----@param scope? FindObjectScope Optional scope ("server" | "database"). Defaults to "database".
----@param filter_char string? Optional type of object to filter picker for ("t", "v", "f", "p").
+---@param opts? FindObjectOpts
 ---@return { script: string, select: boolean }?
-M.find_async = function(connection_options, lsp_client, scope, filter_char)
+M.find_async = function(connection_options, lsp_client, opts)
+	opts = opts or {}
+	local scope = utils.normalize_findobject_scope(opts.scope)
+
 	local title = "Find"
 	if connection_options and connection_options.database and connection_options.server then
 		title = connection_options.server .. " | " .. connection_options.database
@@ -726,10 +730,10 @@ M.find_async = function(connection_options, lsp_client, scope, filter_char)
 
 	local items_to_show = cache
 
-	if filter_char then
+	if opts.object_type then
 		items_to_show = vim.tbl_filter(function(node)
 			local short_code = OBJECT_TYPE_MAP[node.objectType]
-			return short_code == filter_char
+			return short_code == opts.object_type
 		end, global_cache)
 	end
 
@@ -783,7 +787,7 @@ M.find_async = function(connection_options, lsp_client, scope, filter_char)
 		if not chosen_action then return end
 	end
 
-	return generate_script_async(item, lsp_client, chosen_action)
+	return generate_script_async(item, lsp_client, { action_def = chosen_action, owner_uri = opts.owner_uri })
 end
 
 --- Checks if a cached connection is currently in use by any active buffer.
