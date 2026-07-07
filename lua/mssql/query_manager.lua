@@ -506,8 +506,11 @@ function MssqlQueryManager:find_async(scope, object_type)
 	return finder.find_async(
 		self.last_connect_params.connection.options,
 		self.client,
-		scope,
-		object_type
+		{
+			scope = scope,
+			object_type = object_type,
+			owner_uri = self:get_owner_uri(),
+		}
 	)
 end
 

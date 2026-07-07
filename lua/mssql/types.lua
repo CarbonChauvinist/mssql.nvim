@@ -268,6 +268,7 @@
 ---@field bufnr? integer Target buffer (defaults to current)
 ---@field callback? fun() Function to run after selection
 ---@field timeout_ms? integer Optional timeout in milliseconds (default: 10000)
+---@field owner_uri? string Optional owner URI to execute script request context
 ---@field force? boolean Optional Get a new cache and overwrite
 
 ---@class MssqlModule
