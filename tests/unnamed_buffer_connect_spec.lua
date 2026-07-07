@@ -23,6 +23,7 @@ return {
 		assert(client, "LSP failed to attach after auto-rename")
 
 		test_utils.wait_for_intellisenseReady(buf, client)
+		test_utils.wait_for_connected(buf)
 
 		local query = "SELECT 1 AS result"
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })

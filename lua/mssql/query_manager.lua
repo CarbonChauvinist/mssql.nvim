@@ -248,7 +248,7 @@ function MssqlQueryManager:connect_async(connect_params)
 		return false, "Error in connecting: " .. (wait_err and wait_err.message or result.errorMessage)
 	end
 
-	if result and result.connectionSummary then
+	if result and not utils.is_empty(result.connectionSummary) then
 		if not connect_params.connection then
 			connect_params.connection = { options = {} }
 		end
@@ -268,7 +268,7 @@ function MssqlQueryManager:disconnect_async()
 	if not self:set_state(MssqlQueryManager.states.disconnected) then
 		return false
 	end
-	utils.lsp_request_async(self.client, "connection/disconnect", { ownerUri = self:get_owner_uri() })
+	self.client:request("connection/disconnect", { ownerUri = self:get_owner_uri() })
 	self.last_connect_params = nil
 	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
 	return true
@@ -475,7 +475,7 @@ end
 ---@return boolean success
 function MssqlQueryManager:initialise_cache_async(opts)
 	opts = opts or {}
-	local scope = utils.normalize_findobject_scope(scope)
+	local scope = utils.normalize_findobject_scope(opts.scope)
 	local force = opts.force or false
 
 	local conn_opts = self:get_connection_options()

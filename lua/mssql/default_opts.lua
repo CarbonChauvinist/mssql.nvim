@@ -92,6 +92,9 @@ local M = {
 	-- If nil, it's stored in the data_dir
 	connections_file = nil,
 
+	-- Enable/disable SQL connection pooling in the STS layer (e.g. disable for testing harness)
+	enable_connection_pooling = true,
+
 	-- Path to an existing SQL tools service binary (see https://github.com/microsoft/sqltoolsservice/releases).
 	-- If nil, then the binary is auto downloaded to data_dir
 	tools_file = nil,

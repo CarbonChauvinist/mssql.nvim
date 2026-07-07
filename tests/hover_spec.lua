@@ -14,7 +14,7 @@ return {
 	local hover_contents
 	local hover_success = test_utils.poll(function()
 			local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-			local response, _ = client.request_sync("textDocument/hover", params, 1000, buf)
+			local response, _ = client:request_sync("textDocument/hover", params, 1000, buf)
 
 			if response and response.result and response.result.contents then
 				hover_contents = response.result.contents

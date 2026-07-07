@@ -34,15 +34,20 @@ local function copy_state_folder()
 end
 
 --- Extract filter string from CLI args
---- Usage: nvim -u runtests.lua --headless -- "hover"
-local function get_test_filter()
-	for i = #vim.v.argv, 1, -1 do
+--- Usage: nvim -u runtests.lua --headless -- hover foo
+---@return table filters
+local function get_test_filters()
+	local filters = {}
+	for i = 1, #vim.v.argv do
 		local arg = vim.v.argv[i]
-		if not arg:match("^-") and not arg:match("runtests.lua") and not arg:match("nvim") then
-			return arg
+		if not arg:match("^-")
+			and not arg:match("runtests.lua")
+			and not arg:match("nvim")
+		then
+			table.insert(filters, arg)
 		end
 	end
-	return nil
+	return filters
 end
 
 --- Automatically find all the spec files in tests/
@@ -60,9 +65,9 @@ local function discover_tests()
 
 	table.sort(tests)
 
-	local filter = get_test_filter()
-	if filter then
-		print_msg(">>> Filtering tests by: '" .. filter .. "'")
+	local filters = get_test_filters()
+	if #filters > 0 then
+		print_msg(">>> Filtering tests by: " .. table.concat(filters, ", "))
 	end
 
 	-- allows for specific ordering where needed
@@ -75,9 +80,20 @@ local function discover_tests()
 		elseif t:find("edit_connections_spec") then
 			table.insert(ordered, #ordered + 1, t)
 		else
-			if not filter or t:find(filter) then
-				table.insert(others, t)
+			local matches = false
+			if #filters == 0 then
+				matches = true
+			else
+				for _, filter in ipairs(filters) do
+					if t:find(filter) then
+						matches = true
+						break
+					end
+				end
 			end
+				if matches then
+					table.insert(others, t)
+				end
 		end
 	end
 
@@ -93,6 +109,13 @@ local function run_suite()
 
 	coroutine.resume(coroutine.create(function()
 		print_msg("=== Starting Test Suite ( " .. #test_files .. " files) ===")
+
+		-- Keep a dummy SQL buffer active to prevent Neovim from automatically
+		-- shutting down and restarting the LSP client between tests.
+		local dummy_buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_buf_set_name(dummy_buf, vim.fs.joinpath(vim.loop.cwd(), "dummy_persistent_test.sql"))
+		vim.api.nvim_set_option_value("filetype", "sql", { buf = dummy_buf })
+		_G.dummy_buf_id = dummy_buf
 
 		for i, import_path in ipairs(test_files) do
 			local test_module = require(import_path)
@@ -125,6 +148,11 @@ local function run_suite()
 			end
 		else
 			print_msg("All (" .. tostring(#test_files) .. ") tests passed.")
+		end
+
+		-- Clean up the persistent dummy buffer
+		if vim.api.nvim_buf_is_valid(dummy_buf) then
+			vim.api.nvim_buf_delete(dummy_buf, { force = true })
 		end
 
 		local clients = vim.lsp.get_clients({ name = "mssql_ls" })
