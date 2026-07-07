@@ -510,6 +510,7 @@ function MssqlQueryManager:find_async(scope, object_type)
 			scope = scope,
 			object_type = object_type,
 			owner_uri = self:get_owner_uri(),
+			connect_params = self:get_connect_params()
 		}
 	)
 end

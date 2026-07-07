@@ -270,6 +270,7 @@
 ---@field timeout_ms? integer Optional timeout in milliseconds (default: 10000)
 ---@field owner_uri? string Optional owner URI to execute script request context
 ---@field force? boolean Optional Get a new cache and overwrite
+---@field connect_params? MssqlConnectParams Optional connection parameters
 
 ---@class MssqlModule
 ---@field setup fun(opts?: MssqlConfig) Setup the plugin
