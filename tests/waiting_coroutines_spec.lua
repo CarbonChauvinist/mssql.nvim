@@ -1,0 +1,32 @@
+local state = require("mssql.state")
+
+return {
+  test_name = "Waiting coroutines registry works correctly and respects client ID isolation",
+  run_test_async = function()
+    state._reset_all_state({ force_all = true })
+
+    local co = coroutine.running()
+    local bufnr = 999
+    local client_id = 12345
+    local method = "query/complete"
+
+    -- Register a waiting coroutine
+    state.register_waiting_coroutine(bufnr, method, co, client_id)
+
+    local expected_result = { data = "matched" }
+
+    vim.defer_fn(function()
+      -- 1. Try to resume with mismatched client ID (should be ignored)
+      state.resume_waiting_coroutine(bufnr, method, { data = "mismatched" }, nil, 54321)
+
+      -- 2. Resume with correct client ID
+      state.resume_waiting_coroutine(bufnr, method, expected_result, nil, client_id)
+    end, 10)
+
+    -- Yield the coroutine and wait for the resume
+    local result, err = coroutine.yield()
+
+    assert(result == expected_result, "Coroutine resumed with incorrect result")
+    assert(err == nil, "Coroutine resumed with error")
+  end,
+}
