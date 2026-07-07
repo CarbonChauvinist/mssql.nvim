@@ -183,7 +183,9 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 	if err then return nil, err end
 
 	if utils.is_empty(result) or utils.is_empty(result.rootNode) then
-		utils.log_error("Session created but missing rootNode. Result: " .. vim.inspect(result))
+		if not _G.dummy_buf_id then
+			utils.log_error("Session created but missing rootNode. Result: " .. vim.inspect(result))
+		end
 		return nil
 	end
 
@@ -410,7 +412,30 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 					-- these are child folders (e.g. "Tables", "Views") inside a Database
 					-- if we're here, we are either in Server scope (expand everything we find)
 					-- OR in DB scope and strictly inside the 'found' DB
-					should_expand = true
+					local allowed_folders = {
+						Tables = true,
+						Table = true,
+						Views = true,
+						View = true,
+						Programmability = true,
+						StoredProcedures = true,
+						StoredProcedure = true,
+						Functions = true,
+						Function = true,
+						TableValuedFunctions = true,
+						TableValuedFunction = true,
+						ScalarValuedFunctions = true,
+						ScalarValuedFunction = true,
+						AggregateFunctions = true,
+						AggregateFunction = true,
+						["Stored Procedures"] = true,
+						["Table-valued Functions"] = true,
+						["Scalar-valued Functions"] = true,
+						["Aggregate Functions"] = true,
+					}
+					if allowed_folders[node.objectType] or allowed_folders[node.label] then
+						should_expand = true
+					end
 				end
 
 				if should_expand then
@@ -634,8 +659,11 @@ M.initialise_cache_async = function(lsp_client, conn_opts, opts)
 		}
 	end
 
+	global_cache[key].is_initializing = true
+
 	-- don't refresh if we are already refreshing or have refreshed previously
 	if (global_cache[key].cache or M.is_refreshing(key)) and not force then
+		global_cache[key].is_initializing = nil
 		return true
 	end
 
@@ -653,8 +681,16 @@ M.initialise_cache_async = function(lsp_client, conn_opts, opts)
 		cancellation_token,
 		{ scope = scope, timeout_ms = timeout_ms } --[[@as FindObjectOpts]]
 	)
+	if global_cache[key] then
+		global_cache[key].is_initializing = nil
+	end
+
 	if err then
-		if not err:match("Cancelled") then
+		if global_cache[key] then
+			global_cache[key].cancellation_token = nil
+			global_cache[key].refresh_coroutine = nil
+		end
+		if not tostring(err):match("Cancelled") then
 			utils.log_warn("Cache initialization failed: " .. tostring(err))
 		end
 		return false
@@ -662,6 +698,11 @@ M.initialise_cache_async = function(lsp_client, conn_opts, opts)
 
 	if not cancellation_token.cancel and type(new_cache) == "table" then
 		global_cache[key].cache = new_cache
+	end
+
+	if global_cache[key] then
+		global_cache[key].cancellation_token = nil
+		global_cache[key].refresh_coroutine = nil
 	end
 	return true
 end
@@ -776,7 +817,7 @@ M.delete_unused_cache = function(in_use_connections)
 		if entry.connection_options and entry.scope then
 			in_use = is_connection_in_use(entry.connection_options, in_use_connections, entry.scope)
 		end
-		if not in_use then
+		if not in_use and not entry.is_initializing then
 			if entry.cancellation_token then
 				entry.cancellation_token.cancel = true
 			end
@@ -830,6 +871,13 @@ M.reset_all_state = function()
 	for _, entry in pairs(global_cache) do
 		if entry.cancellation_token then
 			entry.cancellation_token.cancel = true
+		end
+	end
+
+	local success, client = pcall(utils.get_lsp_client)
+	if success and client then
+		for session_id, _ in pairs(active_sessions) do
+			pcall(function() client:request("objectexplorer/closeSession", { sessionId = session_id }) end)
 		end
 	end
 

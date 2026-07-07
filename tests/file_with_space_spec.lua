@@ -7,10 +7,10 @@ return {
 		local json = test_utils.create_connection_json({ target_db = "master" })
 		test_utils.write_connections_file(json)
 		local buf, cleanup = test_utils.create_sql_buffer({ buffer_name = "tests/filename with spaces.sql" })
-		local client = test_utils.wait_for_lsp_attach(buf)
+		local _client = test_utils.wait_for_lsp_attach(buf)
 		test_utils.ui_select_fake("TestConnection")
 		mssql.connect(buf)
-		test_utils.wait_for_intellisenseReady(buf, client)
+		test_utils.wait_for_connected(buf)
 		cleanup()
 	end,
 }

@@ -274,17 +274,22 @@ M.enable = function()
 
 	local config = {
 		name = lsp_name,
-		cmd = {
-			opts.tools_file or default_path,
-			"--enable-connection-pooling",
-			"--enable-sql-authentication-provider",
-			"--log-file",
-			joinpath(opts.data_dir, "sqltools.log"),
-			"--application-name",
-			"neovim",
-			"--data-path",
-			joinpath(opts.data_dir, "sql-tools-data"),
-		},
+		cmd = (function()
+			local cmd = {
+				opts.tools_file or default_path,
+				"--enable-sql-authentication-provider",
+				"--log-file",
+				joinpath(opts.data_dir, "sqltools.log"),
+				"--application-name",
+				"neovim",
+				"--data-path",
+				joinpath(opts.data_dir, "sql-tools-data"),
+			}
+			if opts.enable_connection_pooling then
+				table.insert(cmd, 2, "--enable-connection-pooling")
+			end
+			return cmd
+		end)(),
 		filetypes = { "sql" },
 		handlers = customized_handlers,
 
@@ -320,8 +325,11 @@ M.enable = function()
 			else
 				-- existing buffer reloaded (i.e. ':edit')
 				qm.client = client
-				local success, err = utils.reconnect_session(qm, "Session reloaded")
-				if not success then utils.log_error(err) end
+				local params = qm:get_connect_params()
+				if params and params.connection and params.connection.options then
+					local success, err = utils.reconnect_session(qm, "Session reloaded")
+					if not success then utils.log_error(err) end
+				end
 			end
 
 			-- run waiting handlers
@@ -339,7 +347,9 @@ M.enable = function()
 		config.settings = { mssql = opts.lsp_settings }
 	end
 
+	local lsp_group = vim.api.nvim_create_augroup("MSSQLLsp", { clear = true })
 	vim.api.nvim_create_autocmd("FileType", {
+		group = lsp_group,
 		pattern = "sql",
 		callback = function()
 			vim.lsp.start(config)

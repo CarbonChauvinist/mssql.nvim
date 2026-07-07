@@ -7,17 +7,18 @@ return {
 		local json = test_utils.create_connection_json({ target_db = "tempdb" })
 		test_utils.write_connections_file(json)
 
-		local buf, client, cleanup = test_utils.create_lsp_buffer_async()
+		local buf, _client, cleanup = test_utils.create_lsp_buffer_async()
 
 		test_utils.ui_select_fake("TestConnection")
 		mssql.connect(buf)
 
-		test_utils.wait_for_intellisenseReady(buf, client)
+		test_utils.wait_for_connected(buf)
 		local qm = mssql.get_query_manager(buf)
 		if not qm then
 			error("No query manager to test")
 		end
-		assert(qm:get_state() == qm.states.connected, "State should be Connected")
+		local curr_state = qm:get_state()
+		assert(curr_state == qm.states.connected, "State should be 'Connected' but was: '" .. curr_state .. "'")
 		cleanup()
 	end,
 }

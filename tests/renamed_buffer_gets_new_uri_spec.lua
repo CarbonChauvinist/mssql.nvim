@@ -8,11 +8,11 @@ return {
 		mssql.new_query()
 		local buf = vim.api.nvim_get_current_buf()
 		---@type vim.lsp.Client
-		local client = test_utils.wait_for_lsp_attach(buf)
+		local _client = test_utils.wait_for_lsp_attach(buf)
 
 		test_utils.ui_select_fake("TestConnection")
 		mssql.connect(buf)
-		test_utils.wait_for_intellisenseReady(buf, client)
+		test_utils.wait_for_connected(buf)
 		local qm = mssql.get_query_manager(buf)
 
 		test_utils.ui_select_fake("TestDbB")

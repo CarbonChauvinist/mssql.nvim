@@ -152,7 +152,7 @@ M.ui_select_fake = function(item)
 
 		vim.defer_fn(function()
 			on_choice(item, index)
-		end, 3000)
+		end, 50)
 	end
 end
 
@@ -307,7 +307,7 @@ M.wait_for_connected = function(bufnr, opts)
 		if not qm then
 			error("Timeout: QueryManager never attached to buffer " .. bufnr)
 		else
-			error("Timeout: QueryManage attached but stuck in state: " .. tostring(qm:get_state()))
+			error("Timeout: QueryManager attached but stuck in state: " .. tostring(qm:get_state()))
 		end
 	end
 end
@@ -368,7 +368,8 @@ M.setup_mssql_async = function(opts)
 	opts = opts or {}
 	local test_defaults = {
 		open_results_in = "current_window",
-	}
+		enable_connection_pooling = false,
+	} --[[@as MssqlConfig]]
 	opts = vim.tbl_deep_extend("keep", opts, test_defaults)
 
 	local co = coroutine.running()
@@ -411,6 +412,11 @@ M.create_sql_buffer = function(opts)
 
 	local cleanup = function()
 		if buf and vim.api.nvim_buf_is_valid(buf) then
+			-- prevent window fallbacks to dummy buffer during cleanup
+			if vim.api.nvim_get_current_buf() == buf then
+				local scratch = vim.api.nvim_create_buf(false, true)
+				vim.api.nvim_win_set_buf(0, scratch)
+			end
 			vim.api.nvim_buf_delete(buf, {force = true})
 		end
 	end
@@ -637,9 +643,19 @@ end
 M.safe_buf_delete = function(buf, opts)
 	opts = opts or {}
 
+	-- prevent dummy buffer deletion
+	if _G.dummy_buf_id and buf == _G.dummy_buf_id then
+		return true
+	end
+
 	if not vim.api.nvim_buf_is_valid(buf) then
 		vim.notify("Cannot delete invalid buffer: " .. tostring(buf), vim.log.levels.WARN)
 		return false
+	end
+
+	if vim.api.nvim_get_current_buf() == buf then
+		local scratch = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_win_set_buf(0, scratch)
 	end
 
 	local success, result = pcall(vim.api.nvim_buf_delete, buf, opts)

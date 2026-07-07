@@ -43,6 +43,7 @@
 
 ---@class GlobalCacheEntry
 ---@field cache? MssqlNode[]
+---@field is_initializing? boolean
 ---@field cancellation_token? { cancel: boolean, cleanup_callback: function }
 ---@field connection_options? MssqlConnectionOptions
 ---@field refresh_coroutine? thread
@@ -90,6 +91,7 @@
 ---@field results_keymaps MssqlResultsKeymaps|boolean? Keymaps for results buffer (false to disable).
 ---@field find_object_keymaps table<string, string>? Keymaps for find_object picker (Key -> Action ID).
 ---@field connections_file string? Path to connections.json.
+---@field enable_connection_pooling boolean? Enable connection pooling in the STS layer
 ---@field tools_file string? Path to existing SQL tools binary.
 ---@field data_dir string? Directory for tools and config.
 ---@field icons MssqlIcons? Icon configuration.
@@ -112,6 +114,7 @@
 ---@field results_keymaps MssqlResultsKeymaps|boolean
 ---@field find_object_keymaps table<string, string>
 ---@field connections_file string
+---@field enable_connection_pooling boolean
 ---@field tools_file string
 ---@field data_dir string
 ---@field icons MssqlIcons

@@ -45,9 +45,14 @@ echo "Data directory: $XDG_DATA_HOME"
 echo "Skip download: $SKIP_DOWNLOAD"
 
 # first run will download the binaries to ~/.local/share/mssql-test-data/mssql-nvim-test-suite/mssql.nvim
-nvim -u runtests.lua --headless
+set +e
+nvim -u runtests.lua --headless "$@"
+EXIT_CODE=$?
+set -e
 
 # for now move tests lsp.log into repo root before cleanup is run
 if [[ -f "$XDG_STATE_HOME/${NVIM_APPNAME}/logs/lsp.log" ]]; then
 	mv "$XDG_STATE_HOME/${NVIM_APPNAME}/logs/lsp.log" ./test_lsp.log
 fi
+
+exit $EXIT_CODE

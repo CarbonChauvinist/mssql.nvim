@@ -24,7 +24,7 @@ local waiting_coroutines = {}
 local last_query_range = nil
 
 -- Store extmark IDs of selection range instead of raw positions for rerun functionality
----@type {start: integer, end_: integer, buf: integer}?
+---@type {start: integer, end_: integer, buf: integer, start_ns: string, end_ns: string}?
 local last_query_extmarks = nil
 
 ---@param client_id integer

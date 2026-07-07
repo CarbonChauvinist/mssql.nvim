@@ -14,7 +14,7 @@ return {
 		local expected_uri
 		local ready = test_utils.poll(function()
 			local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-			local res, _ = client.request_sync("textDocument/definition", params, 500, buf)
+			local res, _ = client:request_sync("textDocument/definition", params, 500, buf)
 
 			if res and res.result and not vim.tbl_isempty(res.result) then
 				local loc = res.result[1] or result.result
