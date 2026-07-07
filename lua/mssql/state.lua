@@ -12,6 +12,9 @@ local current_config = {}
 ---@type table<integer, MssqlQueryManager>
 local query_managers = {}
 
+---@type table<string, boolean>
+local scripting_uris = {}
+
 ---@type table<integer, function[]>
 local attach_handlers = {}
 
@@ -300,6 +303,7 @@ M._reset_all_state = function(opts)
 	waiting_coroutines = {}
 	attach_handlers = {}
 	query_managers = {}
+	scripting_uris = {}
 
 	if force_all then
 		ready_clients = {}
@@ -318,6 +322,14 @@ M._reset_all_state = function(opts)
 
 	last_query_range = nil
 	M.clear_last_query_extmarks()
+end
+
+M.mark_scripting_uri_connected = function(uri)
+	scripting_uris[uri] = true
+end
+
+M.is_scripting_uri_connected = function(uri)
+	return scripting_uris[uri] or false
 end
 
 return M

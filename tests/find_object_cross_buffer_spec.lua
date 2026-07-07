@@ -4,24 +4,26 @@ local test_utils = require("tests.utils")
 local utils = require("mssql.utils")
 
 return {
-	test_name = "Find Object scripts using the origination buffer's URI even if active window changes",
+	test_name = "Find Object scripts using the originating buffer's URI even if active window changes",
 	run_test_async = function()
 		state._reset_all_state({ force_all = true })
 
+		-- Setup configuration via the test harness
 		test_utils.setup_mssql_async()
 
-		-- originating buffer (connected SQL buffer)
+		-- Create originating buffer (connected SQL buffer)
 		local orig_buf = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_buf_set_name(orig_buf, vim.fs.joinpath(vim.loop.cwd(), "orig_query.sql"))
 		vim.api.nvim_set_option_value("filetype", "sql", { buf = orig_buf })
 		vim.api.nvim_set_current_buf(orig_buf)
 
-		-- target buffer (switched buffer)
+		-- Create target/destination buffer (switched buffer)
 		local switched_buf = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_buf_set_name(switched_buf, vim.fs.joinpath(vim.loop.cwd(), "switched_query.sql"))
 		vim.api.nvim_set_option_value("filetype", "sql", { buf = switched_buf })
 
 		local orig_uri = utils.lsp_file_uri(orig_buf)
+
 		local captured_script_params = nil
 
 		local mock_client = {
@@ -42,13 +44,13 @@ return {
 					end, 5)
 					return true, 2
 				elseif method == "objectexplorer/closeSession" then
-						cb(nil, {})
+					cb(nil, {})
 					return true, 3
 				end
 			end
 		}
 
-		local conn_opts = { server = "MyServer", database = "MyDb", user = "sa" } --[[@as MssqlConnectionOptions]]
+		local conn_opts = { server = "MyServer", database = "MyDb", user = "sa" }
 
 		-- Setup mock item in cache
 		local cache_key = finder.create_cache_key(conn_opts, "database")
@@ -71,20 +73,23 @@ return {
 
 		-- Mock vim.ui.select to switch buffer before making choice
 		local original_ui_select = vim.ui.select
-		vim.ui.select = function(items, _opts, on_choice)
-			-- Switch the current buffer to simulate the user changing tabs/views
+		vim.ui.select = function(items, opts, on_choice)
+			-- Switch the current buffer to simulate the user changing tabs/windows
 			vim.api.nvim_set_current_buf(switched_buf)
 			on_choice(items[1], 1)
 		end
 
-		-- Run find_async passing the origination buffer's URI
+		-- Run find_async passing the originating buffer's URI
 		finder.find_async(conn_opts, mock_client, { scope = "database", owner_uri = orig_uri })
 
+		-- Restore original UI select
 		vim.ui.select = original_ui_select
 
+		-- Assertions
 		assert(captured_script_params ~= nil, "Scripting request was not sent")
 		assert(captured_script_params.ownerURI == orig_uri, "Scripting request used wrong ownerURI. Expected: " .. orig_uri .. ", Got: " .. tostring(captured_script_params.ownerURI))
 
+		-- Cleanup
 		vim.api.nvim_buf_delete(orig_buf, { force = true })
 		vim.api.nvim_buf_delete(switched_buf, { force = true })
 	end

@@ -517,11 +517,13 @@ end
 
 ---@param item MssqlNode
 ---@param client vim.lsp.Client
----@param opts? { action_def?: MssqlResolvedAction, owner_uri?: string }
+---@param opts? { action_def?: MssqlResolvedAction, owner_uri?: string, connect_params?: MssqlConnectParams }
 ---@return { script: string, select: boolean }
 local generate_script_async = function(item, client, opts)
 	opts = opts or {}
 	local action_def = opts.action_def
+	local connect_params = opts.connect_params
+	local owner_uri = opts.owner_uri
 
 	local config = state.get_config() or {}
 
@@ -532,11 +534,40 @@ local generate_script_async = function(item, client, opts)
 		action_def = resolve_action(type_config and type_config.default)
 	end
 
-	-- local def = action_def or resolve_action(type_config and type_config.default)
 	if not action_def then
 		local msg = "No script definition found for " .. tostring(item.objectType)
 		utils.log_error(msg)
 		error(msg, 0)
+	end
+
+	local target_db = item.metadata.urn and item.metadata.urn:match("Database%[@Name='(.-)'%]")
+	if target_db and connect_params and connect_params.connection and connect_params.connection.options then
+		local current_db = connect_params.connection.options.database
+		if target_db ~= current_db then
+			local temp_uri = "mssql://scripting/" .. connect_params.connection.options.server .. "/" .. target_db
+
+			if not state.is_scripting_uri_connected(temp_uri) then
+				local temp_params = vim.deepcopy(connect_params) --[[@as MssqlConnectParams]]
+				temp_params.ownerUri = temp_uri
+				temp_params.connection.options.database = target_db
+				temp_params.connection.options.databaseDisplayName = target_db
+				if temp_params.connection.summary then
+					temp_params.connection.summary.databaseName = target_db
+				end
+
+				local _, connect_err = utils.lsp_request_async(client, "connection/connect", temp_params)
+				if not connect_err then
+					local result, wait_err = utils.wait_for_notification_async(0, client, "connection/complete", 10000)
+					if not wait_err and (utils.is_empty(result) or utils.is_empty(result.errorMessage)) then
+						state.mark_scripting_uri_connected(temp_uri)
+					end
+				end
+			end
+
+			if state.is_scripting_uri_connected(temp_uri) then
+				owner_uri = temp_uri
+			end
+		end
 	end
 
 	local scripting_params = {
@@ -554,7 +585,7 @@ local generate_script_async = function(item, client, opts)
 			typeOfDataToScript = "SchemaOnly",
 			scriptStatistics = "ScriptStatsNone",
 		},
-		ownerURI = opts.owner_uri or utils.lsp_file_uri(0),
+		ownerURI = owner_uri or utils.lsp_file_uri(0),
 		operation = action_def.op,
 	}
 
@@ -568,7 +599,6 @@ local generate_script_async = function(item, client, opts)
 	end
 
 	local script_content = res.script
-	local target_db = item.metadata.urn and item.metadata.urn:match("Database%[@Name='(.-)'%]")
 
 	if item.objectType == "Table" and target_db then
 		local schema = ""
@@ -577,8 +607,6 @@ local generate_script_async = function(item, client, opts)
 			schema = escape_pattern(item.metadata.schema)
 			name = escape_pattern(item.metadata.name)
 		end
-		-- local schema = escape_pattern(item.metadata.schema)
-		-- local name = escape_pattern(item.metadata.name)
 
 		local pattern = "((%[[^%]]+%])%.%[" .. schema .. "%]%.%[" .. name .. "%])"
 		script_content, _ = string.gsub(script_content, pattern, function(full_match, db_name)
@@ -787,7 +815,7 @@ M.find_async = function(connection_options, lsp_client, opts)
 		if not chosen_action then return end
 	end
 
-	return generate_script_async(item, lsp_client, { action_def = chosen_action, owner_uri = opts.owner_uri })
+	return generate_script_async(item, lsp_client, { action_def = chosen_action, owner_uri = opts.owner_uri, connect_params = opts.connect_params })
 end
 
 --- Checks if a cached connection is currently in use by any active buffer.
