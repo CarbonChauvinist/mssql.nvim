@@ -5,7 +5,7 @@ return {
 	test_name = "Client readiness state is correctly tracked via LSP handlers",
 	run_test_async = function()
 		local buf, client, _, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
-		state._reset_all_state()
+		state._reset_all_state({ force_all = true })
 
 		local is_ready = state.is_client_ready(client.id)
 		assert(is_ready == nil or is_ready == false, "Client should not be ready immediately after state reset")

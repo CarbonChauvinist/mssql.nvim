@@ -62,6 +62,7 @@ M.setup = function(opts)
 
 			local qm = state.get_query_manager(buf)
 			if qm then
+				qm:disconnect_async()
 				qm:cleanup()
 				state.remove_query_manager(buf)
 				vim.schedule(function()

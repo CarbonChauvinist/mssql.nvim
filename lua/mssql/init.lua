@@ -153,6 +153,14 @@ M.connect = utils.async(function(bufnr)
 		return
 	end
 
+	local active_clients = vim.lsp.get_clients({ bufnr = bufnr, name = "mssql_ls" })
+	for _, c in ipairs(active_clients) do
+		if not c:is_stopped() and not c._is_stopping then
+			qm.client = c
+			break
+		end
+	end
+
 	if cmds.perform_connect_async(curr_conf, qm, bufnr) then
 		qm:initialise_cache_async()
 	end

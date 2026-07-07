@@ -208,11 +208,20 @@ M.wait_for_attach = function(bufnr, timeout_ms)
 	local interval_ms = 50
 
 	while (vim.loop.now() - start_time) < timeout_ms do
-		local existing_client = vim.lsp.get_clients({ name = lsp_name, bufnr = bufnr })[1]
-		if existing_client then return existing_client end
+		local clients = vim.lsp.get_clients({ name = lsp_name, bufnr = bufnr })
+		for _, c in ipairs(clients) do
+			if not c:is_stopped() and not c._is_stopping then
+				return c
+			end
+		end
 
 		local qm = state.get_query_manager(bufnr)
-		if qm and qm.client then return qm.client end
+		if qm and qm.client
+			and not qm.client:is_stopped()
+			and not qm.client._is_stopping()
+		then
+			return qm.client
+		end
 
 		utils.defer_async(interval_ms)
 	end
