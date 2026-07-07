@@ -27,7 +27,7 @@ return {
 				elseif method == "objectexplorer/expand" then
 					-- return empty to stop recursion immediately, just testing connection setup
 					vim.defer_fn(function()
-						state.emit_event("objectexplorer/expandcompleted", nil, {
+						finder.handle_expand_completed(nil, {
 							sessionId = params.sessionId,
 							nodes = {}
 						}, { client_id = 123456 })

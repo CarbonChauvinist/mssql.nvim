@@ -15,13 +15,9 @@ local query_managers = {}
 ---@type table<integer, function[]>
 local attach_handlers = {}
 
--- Event Router Registry
--- Format: { ["query/complete"] = { <callback1>, <callback2> ... } }
----@type table<string, function[]?>
-local event_listeners = {}
-
----@type table<string, function[]?>
-local named_listeners = {}
+-- Coroutine lifecycle management
+---@type table<string, { co: thread, client_id: integer? }>
+local waiting_coroutines = {}
 
 -- Store the last query selection range for rerun functionality
 ---@type {start: number[], end_: number[], buf: integer}?
@@ -125,66 +121,45 @@ M.clear_attach_handlers = function(bufnr)
 	attach_handlers[bufnr] = nil
 end
 
-
----Registers a one-off listener for an LSP method.
----@param method string The LSP method name (e.g., "query/complete")
----@param callback function(err, result, ctx)
----@param group_id? string (Optional) Unique ID to prevent duplication
----@return function dispose Function to remove the listener
-M.on_event = function(method, callback, group_id)
-	method = method:lower()
-
-	-- handle named listeners (idempotent)
-	if group_id then
-		if type(group_id) ~= "string" then
-			error("group_id must be a string")
-		end
-		if not named_listeners[method] then named_listeners[method] = {} end
-		named_listeners[method][group_id] = callback
-
-		-- returns disposer for this specific ID
-		return function()
-			if named_listeners[method] then
-				named_listeners[method][group_id] = nil
-			end
-		end
-	end
-
-	-- handle anon listeners
-	if not event_listeners[method] then
-		event_listeners[method] = {}
-	end
-	table.insert(event_listeners[method], callback)
-
-	-- Return a dispose function to allow clean removal
-	return function()
-		local listeners = event_listeners[method]
-		if not listeners then return end
-		for i, cb in ipairs(listeners) do
-			if cb == callback then
-				table.remove(listeners, i)
-				break
-			end
-		end
-	end
+--- Registers a coroutine to wait for a specific LSP notification on a buffer.
+---@param bufnr integer
+---@param method string
+---@param co thread
+---@param client_id? integer
+M.register_waiting_coroutine = function(bufnr, method, co, client_id)
+	local key = string.format("%d|%s", bufnr, method:lower())
+	waiting_coroutines[key] = { co = co, client_id = client_id }
 end
 
----Emits an event to all registered listeners.
+---Clears a waiting coroutine reference (e.g. after a timeout or cancellation).
+---@param bufnr integer
 ---@param method string
----@param err any
----@param result any
----@param ctx any
-M.emit_event = function(method, err, result, ctx)
-	method = method:lower()
-	if event_listeners[method] then
-		for _, cb in ipairs(event_listeners[method]) do
-			pcall(cb, err, result, ctx)
-		end
-	end
+M.clear_waiting_coroutine = function(bufnr, method)
+	local key = string.format("%d|%s", bufnr, method:lower())
+	waiting_coroutines[key] = nil
+end
 
-	if named_listeners[method] then
-		for _, cb in pairs(named_listeners[method]) do
-			pcall(cb, err, result, ctx)
+---Resumes any coroutine waiting for the notification.
+---@param bufnr integer
+---@param method string
+---@param result any
+---@param err any
+---@param client_id? integer
+M.resume_waiting_coroutine = function(bufnr, method, result, err, client_id)
+	method = method:lower()
+	local key = string.format("%d|%s", bufnr, method)
+	local entry = waiting_coroutines[key]
+	if entry then
+		if client_id and entry.client_id and entry.client_id ~= client_id then
+			return
+		end
+		waiting_coroutines[key] = nil
+		local co = entry.co
+		if coroutine.status(co) == "suspended" then
+			local ok, errmsg = coroutine.resume(co, result, err)
+			if not ok then
+				vim.notify(tostring(errmsg), vim.log.levels.ERROR)
+			end
 		end
 	end
 end
@@ -318,12 +293,29 @@ end
 
 ---TESTING ONLY: Resets ALL internal module state.
 ---Use in teardown/after_each block of specs to ensure isolation.
-M._reset_all_state = function()
-	event_listeners = {}
-	named_listeners = {}
+---@param opts? { force_all: boolean } If true resets all clients, otherwise retain active clients (defaults to false)
+M._reset_all_state = function(opts)
+	opts = opts or {}
+	local force_all = opts.force_all or false
+	waiting_coroutines = {}
 	attach_handlers = {}
 	query_managers = {}
-	ready_clients = {}
+
+	if force_all then
+		ready_clients = {}
+	else
+		-- Retain ready status for active clients to prevent out-of-sync timeouts
+		local active_ids = {}
+		for _, client in ipairs(vim.lsp.get_clients({ name = "mssql_ls" })) do
+			active_ids[client.id] = true
+		end
+		for id, _ in pairs(ready_clients) do
+			if not active_ids[id] then
+				ready_clients[id] = nil
+			end
+		end
+	end
+
 	last_query_range = nil
 	M.clear_last_query_extmarks()
 end

@@ -50,14 +50,28 @@ local function clean_cache()
 	require("mssql.find_object").delete_unused_cache(in_use_connections)
 end
 
+-- Helper to resolve the buffer number for notifications and requests
+local function get_bufnr(result, ctx)
+	if not utils.is_empty(result) and type(result) == "table" and not utils.is_empty(result.ownerUri) then
+		local bufnr = utils.get_bufnr_from_uri(result.ownerUri)
+		if bufnr then return bufnr end
+	end
+	if ctx and ctx.bufnr and ctx.bufnr ~= 0 then
+		return ctx.bufnr
+	end
+	return 0
+end
+
 -- Helper to wrap handlers with routing logic
 local function make_handler(method, core_logic)
 	return function(err, result, ctx, config)
 		if core_logic then
 			core_logic(err, result, ctx, config)
 		end
-		-- broadcast to dynamic listeners
-		state.emit_event(method, err, result, ctx)
+
+		local bufnr = get_bufnr(result, ctx)
+		local client_id = ctx and ctx.client_id
+		state.resume_waiting_coroutine(bufnr, method, result, err, client_id)
 	end
 end
 
@@ -65,7 +79,9 @@ end
 ---@return function
 local generic_event_router = function(method)
 	return function(err, result, ctx, _config)
-		state.emit_event(method, err, result, ctx)
+		local bufnr = get_bufnr(result, ctx)
+		local client_id = ctx and ctx.client_id
+		state.resume_waiting_coroutine(bufnr, method, result, err, client_id)
 	end
 end
 
@@ -109,11 +125,39 @@ local customized_handlers = {
 		end
 	end),
 
-	["query/message"] = make_handler("query/message", function(_, result)
+	["query/message"] = make_handler("query/message", function(_, result, ctx)
 		if utils.is_empty(result) or utils.is_empty(result.message) or utils.is_empty(result.message.message) then
 			return
 		end
 		state.get_config().view_messages_in(result.message.message, result.message.isError)
+
+		local bufnr = ctx and ctx.bufnr
+		if result and result.ownerUri then
+			bufnr = utils.get_bufnr_from_uri(result.ownerUri) or bufnr
+		end
+		if bufnr then
+			local qm = state.get_query_manager(bufnr)
+			if qm then
+				qm:handle_query_message(result)
+			end
+		end
+	end),
+
+	["query/complete"] = make_handler("query/complete", function(_, result, ctx)
+		local bufnr = ctx and ctx.bufnr
+		if result and result.ownerUri then
+			bufnr = utils.get_bufnr_from_uri(result.ownerUri) or bufnr
+		end
+		if bufnr then
+			local qm = state.get_query_manager(bufnr)
+			if qm then
+				qm:handle_query_complete(result)
+			end
+		end
+	end),
+
+	["objectexplorer/expandcompleted"] = make_handler("objectexplorer/expandcompleted", function(err, result, ctx)
+		require("mssql.find_object").handle_expand_completed(err, result, ctx)
 	end),
 
 	["connection/connectionchanged"] = make_handler("connection/connectionchanged", function(_, result, _)
@@ -279,40 +323,6 @@ M.enable = function()
 				end
 				state.clear_attach_handlers(bufnr)
 			end
-
-		  -- subscribe QM to events via the Router
-		  qm = state.get_query_manager(bufnr)
-		  if qm then
-			local buffer_uri = utils.lsp_file_uri(bufnr)
-
-			-- for query stats (elapsed time, rows affected from SELECT queries)
-			local dispose_complete = state.on_event("query/complete", function(_, result, _)
-					if not vim.api.nvim_buf_is_valid(bufnr) then return end
-					if result and result.ownerUri == buffer_uri then
-						qm:handle_query_complete(result)
-					end
-				end)
-
-			-- DML rows affected query stats
-			local dispose_message = state.on_event("query/message", function(_, result, _)
-					if not vim.api.nvim_buf_is_valid(bufnr) then return end
-					if result and result.ownerUri == buffer_uri then
-						qm:handle_query_message(result)
-					end
-				end)
-
-			-- handle cleanup on detach
-			vim.api.nvim_create_autocmd("LspDetach", {
-				buffer = bufnr,
-				group = cleanup_group,
-				callback = function(args)
-					if args.data.client_id == client.id then
-						if dispose_complete then dispose_complete() end
-						if dispose_message then dispose_message() end
-					end
-				end
-			})
-		   end
 		end,
 	}
 
