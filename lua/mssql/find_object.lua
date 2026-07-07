@@ -131,22 +131,16 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 	end
 
 	-- setup event listener
-	local dispose
-	dispose = state.on_event("objectexplorer/sessioncreated", function(err, result, ctx)
-		if ctx and ctx.client_id == client.id then
-			if not resumed and not utils.is_empty(result) and not utils.is_empty(result.rootNode) then
-				resumed = true
-				utils.try_resume(co, result, err)
-			end
-		end
-	end)
+	local bufnr = 0
+	state.register_waiting_coroutine(bufnr, "objectexplorer/sessioncreated", co, client.id)
+
 
 	-- attach cancellation handler for duration of this call
 	if cancellation_token then
 		cancellation_token.cleanup_callback = function()
 			if not resumed then
 				resumed = true
-				if dispose then dispose() end
+				state.clear_waiting_coroutine(bufnr, "objectexplorer/sessioncreated")
 				if timeout_timer then timeout_timer:close() end
 				utils.try_resume(co, nil, "Cancelled")
 			end
@@ -159,7 +153,7 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 		if err then
 			if not resumed then
 				resumed = true
-				if dispose then dispose() end
+				state.clear_waiting_coroutine(bufnr, "objectexplorer/sessioncreated")
 				if timeout_timer then timeout_timer:close() end
 				utils.try_resume(co, nil, err)
 			end
@@ -169,7 +163,7 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 		if not utils.is_empty(result) and not utils.is_empty(result.rootNode) then
 			if not resumed then
 				resumed = true
-				if dispose then dispose() end
+				state.clear_waiting_coroutine(bufnr, "objectexplorer/sessioncreated")
 				if timeout_timer then timeout_timer:close() end
 				utils.try_resume(co, result, nil)
 			end
@@ -179,7 +173,7 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 	timeout_timer = vim.defer_fn(function()
 		if not resumed then
 			resumed = true
-			if dispose then dispose() end
+			state.clear_waiting_coroutine(bufnr, "objectexplorer/sessioncreated")
 			utils.try_resume(co, nil, "Timeout waiting for session created")
 		end
 	end, timeout_ms)
@@ -251,7 +245,6 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
         timeout_ms = 10000
     end
 	local start_time = vim.uv.hrtime()
-	state.on_event("objectexplorer/expandcompleted", main_expand_handler, "mssql_find_object_global")
 
 	-- prepare session options
 	-- if scope is 'server', we MUST NOT bind the Object Explorer session to the specific database
@@ -843,6 +836,10 @@ M.reset_all_state = function()
 	global_cache = {}
 
 	active_sessions = {}
+end
+
+M.handle_expand_completed = function(err, result, ctx)
+	main_expand_handler(err, result, ctx)
 end
 
 return M

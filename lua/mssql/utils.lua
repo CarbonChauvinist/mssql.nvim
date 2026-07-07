@@ -83,8 +83,11 @@ M.safe_assert = function(item, message)
 	return item
 end
 
--- resumes the coroutiune, vim notifies any errors
+-- resumes the coroutine, vim notifies any errors
 M.try_resume = function(co, ...)
+	if coroutine.status(co) ~= "suspended" then
+		return false
+	end
 	local result, errmsg = coroutine.resume(co, ...)
 
 	if not result then
@@ -110,15 +113,21 @@ M.lsp_file_uri = function(bufnr)
 	return "file://" .. path
 end
 
+---Converts an LSP ownerUri string back to a buffer number
+---@param owner_uri string
+---@return integer? bufnr
+M.get_bufnr_from_uri = function(owner_uri)
+	if not owner_uri then return nil end
+	return vim.iter(vim.api.nvim_list_bufs()):find(function(buf)
+		return M.lsp_file_uri(buf) == owner_uri
+	end)
+end
+
 M.get_lsp_client = function(owner_uri)
-	local bufnr
+	local bufnr = 0
 	if owner_uri then
-		bufnr = vim.iter(vim.api.nvim_list_bufs()):find(function(buf)
-			return M.lsp_file_uri(buf) == owner_uri
-		end)
-		M.safe_assert(bufnr, "No buffer found with filename " .. owner_uri)
-	else
-		bufnr = 0
+		local found_buf = M.get_bufnr_from_uri(owner_uri)
+		bufnr = M.safe_assert(found_buf, "No buffer found with filename " .. owner_uri)
 	end
 
 	return M.safe_assert(
@@ -224,20 +233,13 @@ M.wait_for_notification_async = function(_bufnr, client, method, timeout_ms)
 	local co = coroutine.running()
 	local resumed = false
 
-	local dispose = state.on_event(method, function(err, result, ctx)
-		if ctx and ctx.client_id == client.id then
-			if not resumed then
-				resumed = true
-				M.try_resume(co, result, err)
-			end
-		end
-	end)
+	state.register_waiting_coroutine(_bufnr, method, co)
 
 	if timeout_ms then
 		vim.defer_fn(function()
 			if not resumed then
 				resumed = true
-				dispose()
+				state.clear_waiting_coroutine(_bufnr, method)
 				M.try_resume(co, nil, {
 					code = -32001, -- timeout code
 					message = "Waiting for " .. method .. " timed out"
@@ -247,7 +249,7 @@ M.wait_for_notification_async = function(_bufnr, client, method, timeout_ms)
 	end
 
 	local result, err = coroutine.yield()
-	dispose()
+	resumed = true
 	return result, err
 end
 

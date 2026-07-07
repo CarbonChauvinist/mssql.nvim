@@ -15,11 +15,11 @@ return {
       request = function(_, method, params, cb)
         if method == "objectexplorer/createsession" then
           vim.defer_fn(function()
-            state.emit_event("objectexplorer/sessioncreated", nil, {
+			state.resume_waiting_coroutine(0, "objectexplorer/sessioncreated", {
               sessionId = session_id,
               success = true,
               rootNode = { nodePath = "root", objectType = "Database" },
-            }, { client_id = 998877 })
+            }, nil)
 
             if cb then
               cb(nil, { sessionId = session_id })
@@ -74,7 +74,7 @@ return {
 
           -- Trigger expansion event
           vim.defer_fn(function()
-            state.emit_event("objectexplorer/expandcompleted", nil, {
+			finder.handle_expand_completed(nil, {
               sessionId = session_id,
               nodes = nodes,
             }, { client_id = 998877 })

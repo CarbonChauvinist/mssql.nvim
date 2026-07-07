@@ -31,7 +31,7 @@ return {
 					-- triggers path where duplicate listeners would fire
 					local sid = params.sessionId
 					vim.defer_fn(function()
-						state.emit_event("objectexplorer/expandcompleted", nil, {
+						finder.handle_expand_completed(nil, {
 							sessionId = sid,
 							nodes = {
 								{ label = "Table1", objectType = "Table", parentNodePath = "root", nodePath = "root/Table1" }
@@ -62,7 +62,6 @@ return {
 		local targeted_cache
 		for k, v in pairs(cache) do
 			if k == finder.create_cache_key(conn_opts, "database") then
-			-- if k:find('"server":"S"') and k:find('"database":"D"') then
 				targeted_cache = v
 				break
 			end
