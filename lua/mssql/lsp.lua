@@ -229,38 +229,6 @@ M.wait_for_attach = function(bufnr, timeout_ms)
 	utils.log_error("Timed out waiting for LSP to attach to buffer " .. bufnr)
 	return nil
 end
--- 	local existing_client = vim.lsp.get_clients({ name = lsp_name, bufnr = bufnr })[1]
--- 	-- if existing_client then return existing_client end
---
--- 	local qm = state.get_query_manager(bufnr)
--- 	if qm and qm.client then
--- 		return qm.client
--- 	end
---
--- 	local co = coroutine.running()
--- 	local resumed = false
---
--- 	local on_attach_handler = function(client)
--- 		if not resumed then
--- 			resumed = true
--- 			utils.try_resume(co, client)
--- 		end
--- 	end
---
--- 	state.add_attach_handler(bufnr, on_attach_handler)
---
--- 	if timeout then
--- 		vim.defer_fn(function()
--- 			if not resumed then
--- 				resumed = true
--- 				utils.log_error("Waiting for the lsp to attach to buffer " .. bufnr .. " timed out")
--- 				-- handler will be cleaned up next time on_attach fires
--- 				utils.try_resume(co, nil)
--- 			end
--- 		end, timeout)
--- 	end
--- 	return coroutine.yield()
--- end
 
 
 M.enable = function()
@@ -330,15 +298,6 @@ M.enable = function()
 					local success, err = utils.reconnect_session(qm, "Session reloaded")
 					if not success then utils.log_error(err) end
 				end
-			end
-
-			-- run waiting handlers
-			local handlers = state.get_attach_handlers(bufnr)
-			if handlers then
-				for _, handler in ipairs(handlers) do
-					pcall(handler, client)
-				end
-				state.clear_attach_handlers(bufnr)
 			end
 		end,
 	}

@@ -70,7 +70,6 @@ M.setup = function(opts)
 				end)
 			end
 
-			state.clear_attach_handlers(buf)
 		end,
 	})
 

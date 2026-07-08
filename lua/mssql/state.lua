@@ -15,9 +15,6 @@ local query_managers = {}
 ---@type table<string, boolean>
 local scripting_uris = {}
 
----@type table<integer, function[]>
-local attach_handlers = {}
-
 -- Coroutine lifecycle management
 ---@type table<string, { co: thread, client_id: integer? }>
 local waiting_coroutines = {}
@@ -76,52 +73,6 @@ end
 M.remove_query_manager = function(bufnr)
 	if not bufnr then return end
 	query_managers[bufnr] = nil
-end
-
----@param bufnr? integer
----@return function[]
-M.get_attach_handlers = function(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	return attach_handlers[bufnr] or nil
-end
-
----Adds a handler (or list of handlers) to the buffer's wait list
----@param bufnr? integer
----@param handler function|function[]
----@return boolean? success
----@return string? msg
-M.add_attach_handler = function(bufnr, handler)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-
-	if not attach_handlers[bufnr] then
-		attach_handlers[bufnr] = {}
-	end
-
-	local handler_type = type(handler)
-	if handler_type ~= "table" and handler_type ~= "function" then
-		return false, "Attempted to add handler that was neither table nor function."
-	end
-	if handler_type == "table" then
-		local handler_count = 0
-		for _, h in ipairs(handler) do
-			if type(h) == "function" then
-				table.insert(attach_handlers[bufnr], h)
-				handler_count = handler_count + 1
-			end
-		end
-		if handler_count == 0 then
-			return false, "No items in table were a function, no handlers added."
-		end
-	elseif type(handler) == "function" then
-		table.insert(attach_handlers[bufnr], handler)
-	end
-	return true
-end
-
----Clears handlers for a buffer (used after they have fired)
----@param bufnr integer
-M.clear_attach_handlers = function(bufnr)
-	attach_handlers[bufnr] = nil
 end
 
 --- Registers a coroutine to wait for a specific LSP notification on a buffer.
@@ -301,7 +252,6 @@ M._reset_all_state = function(opts)
 	opts = opts or {}
 	local force_all = opts.force_all or false
 	waiting_coroutines = {}
-	attach_handlers = {}
 	query_managers = {}
 	scripting_uris = {}
 
