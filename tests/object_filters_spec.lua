@@ -1,4 +1,4 @@
-local finder = require("mssql.find_object")
+local explorer = require("mssql.explorer")
 local state = require("mssql.state")
 local test_utils = require("tests.utils")
 
@@ -74,7 +74,7 @@ return {
 
           -- Trigger expansion event
           vim.defer_fn(function()
-			finder.handle_expand_completed(nil, {
+			explorer.handle_expand_completed(nil, {
               sessionId = session_id,
               nodes = nodes,
             }, { client_id = 998877 })
@@ -109,7 +109,7 @@ return {
       },
     } --[[@as MssqlConnectionOptions]]
 
-    finder.initialise_cache_async(mock_client, conn_opts, { scope = "database", force = true })
+    explorer.initialise_cache_async(mock_client, conn_opts, { scope = "database", force = true })
 
     -- ASSERTIONS
     -- 1. Tables
