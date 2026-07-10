@@ -1,6 +1,7 @@
 local qmm = require("mssql.query_manager")
 local state = require("mssql.state")
 local utils = require("mssql.utils")
+local explorer = require("mssql.explorer")
 
 --- Sanitizes nullable completion item fields to prevent sorting and validation crashes.
 ---
@@ -46,7 +47,7 @@ local function clean_cache()
 		end
 	end
 
-	require("mssql.find_object").delete_unused_cache(in_use_connections)
+	explorer.delete_unused_cache(in_use_connections)
 end
 
 -- Helper to resolve the buffer number for notifications and requests
@@ -156,7 +157,7 @@ local customized_handlers = {
 	end),
 
 	["objectexplorer/expandcompleted"] = make_handler("objectexplorer/expandcompleted", function(err, result, ctx)
-		require("mssql.find_object").handle_expand_completed(err, result, ctx)
+		explorer.handle_expand_completed(err, result, ctx)
 	end),
 
 	["connection/connectionchanged"] = make_handler("connection/connectionchanged", function(_, result, _)
