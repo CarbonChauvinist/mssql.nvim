@@ -19,19 +19,19 @@ M.get_tools_download_url = function()
 			x64 = "https://github.com/microsoft/sqltoolsservice/releases/download/6.0.20260709.1/Microsoft.SqlTools.ServiceLayer-osx-x64-net10.0.tar.gz",
 		},
 	}
-	local hashes = {
+	local sha256sums = {
 		Windows = {
-			arm64 = "sha256:4fb6d2a5a6a7c304bdffaca65f80dfae76010d22ef6d09fc3fedab8393e7b50a",
-			x64 = "sha256:44e4197de678c856254a832adbc18703bfdea984d2cd1efccacb25b5f8343c71",
-			x86 = "sha256:3456ac726c77a8e5e6f925d287be2f3c5f99f0f6b1ddeeb67d5a960238fc7189",
+			arm64 = "4fb6d2a5a6a7c304bdffaca65f80dfae76010d22ef6d09fc3fedab8393e7b50a",
+			x64 = "44e4197de678c856254a832adbc18703bfdea984d2cd1efccacb25b5f8343c71",
+			x86 = "3456ac726c77a8e5e6f925d287be2f3c5f99f0f6b1ddeeb67d5a960238fc7189",
 		},
 		Linux = {
-			arm64 = "sha256:c872ff665f847beddd9f37f98ba52f255b0f1a6700c64e29d2e230bcae5fc183",
-			x64 = "sha256:47d3d758b529e72cac0519a2d6bb9c9e046f60d2008e048fdd9b8d3de3d28461"
+			arm64 = "c872ff665f847beddd9f37f98ba52f255b0f1a6700c64e29d2e230bcae5fc183",
+			x64 = "47d3d758b529e72cac0519a2d6bb9c9e046f60d2008e048fdd9b8d3de3d28461"
 		},
 		OSX = {
-			arm64 = "sha256:83dbab91f26b37fa166b76dd7b998a14878f9dfe379da2db933bb07f90249e65",
-			x64 = "sha256:47d3d758b529e72cac0519a2d6bb9c9e046f60d2008e048fdd9b8d3de3d28461"
+			arm64 = "83dbab91f26b37fa166b76dd7b998a14878f9dfe379da2db933bb07f90249e65",
+			x64 = "47d3d758b529e72cac0519a2d6bb9c9e046f60d2008e048fdd9b8d3de3d28461"
 		}
 	}
 
@@ -47,7 +47,7 @@ M.get_tools_download_url = function()
 		error("Your system architecture " .. arch .. " is not supported. It can either be x64 or arm64.", 0)
 	end
 
-	local hash = hashes[os] and hashes[os][arch]
+	local hash = sha256sums[os] and sha256sums[os][arch]
 	return url, hash
 end
 
@@ -55,11 +55,7 @@ end
 M.download_tools_async = function(url, data_folder)
 	local target_folder = joinpath(data_folder, "sqltools")
 	local _, expected_hash = M.get_tools_download_url()
-	local raw_hash = ""
-	if expected_hash then
-		raw_hash = expected_hash:match("^sha256:(%x+)") or expected_hash
-		raw_hash = raw_hash:lower()
-	end
+	local raw_hash = (expected_hash or ""):lower()
 
 	local download_job
 	if jit.os == "Windows" then
