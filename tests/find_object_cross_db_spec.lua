@@ -2,6 +2,7 @@ local finder = require("mssql.find_object")
 local state = require("mssql.state")
 local utils = require("mssql.utils")
 local test_utils = require("tests.utils")
+local explorer = require("mssql.explorer")
 
 return {
 	test_name = "Find Object scripts cross-database by establishing a temporary connection context",
@@ -47,18 +48,18 @@ return {
 			end
 		}
 
-		local connect_options = { server = "MyServer", database = "DbA", user = "sa" }
+		local conn_opts = { server = "MyServer", database = "DbA", user = "sa" } --[[@as MssqlConnectionOptions]]
 		local connect_params = {
 			ownerUri = orig_uri,
 			connection = {
-				options = connect_options
+				options = conn_opts
 			}
 		}
 
 		-- Setup mock item in cache for database "DbB" (different from connected "DbA")
-		local conn_opts_dbb = { server = "MyServer", database = "DbB", user = "sa" }
-		local cache_key = finder.create_cache_key(conn_opts_dbb, "database")
-		finder.get_cache()[cache_key] = {
+		local conn_opts_dbb = { server = "MyServer", database = "DbB", user = "sa" } --[[@as MssqlConnectionOptions]]
+		local cache_key = explorer.create_cache_key(conn_opts_dbb, "database")
+		explorer.get_cache()[cache_key] = {
 			cache = {
 				{
 					label = "MyTable",

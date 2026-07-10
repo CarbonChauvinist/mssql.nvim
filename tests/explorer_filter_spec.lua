@@ -1,4 +1,4 @@
-local finder = require("mssql.find_object")
+local explorer = require("mssql.explorer")
 local state = require("mssql.state")
 local test_utils = require("tests.utils")
 
@@ -63,7 +63,7 @@ return {
 
 					-- trigger event logic
 					vim.defer_fn(function()
-						finder.handle_expand_completed(nil, {
+						explorer.handle_expand_completed(nil, {
 							sessionId = session_id,
 							nodes = nodes,
 						}, { client_id = 56789 })
@@ -86,7 +86,7 @@ return {
 			databaseDenyList = { "Denied.*" }
 		} --[[@as MssqlConnectionOptions]]
 
-		finder.initialise_cache_async(mock_client, conn_opts, { scope = "server", force = true })
+		explorer.initialise_cache_async(mock_client, conn_opts, { scope = "server", force = true })
 
 		-- test 1: allowed db
 		local found = test_utils.wait_for_cache_content("TableInAllowedDb", {debug = true, timeout = 10000 })

@@ -1,6 +1,7 @@
 local finder = require("mssql.find_object")
 local state = require("mssql.state")
 local test_utils = require("tests.utils")
+local explorer = require("mssql.explorer")
 
 return {
 	test_name = "Find Object Scope (Server vs Database)",
@@ -27,7 +28,7 @@ return {
 				elseif method == "objectexplorer/expand" then
 					-- return empty to stop recursion immediately, just testing connection setup
 					vim.defer_fn(function()
-						finder.handle_expand_completed(nil, {
+						explorer.handle_expand_completed(nil, {
 							sessionId = params.sessionId,
 							nodes = {}
 						}, { client_id = 123456 })
@@ -48,7 +49,7 @@ return {
 		state._reset_all_state()
 		captured_create_params = {}
 
-		finder.initialise_cache_async(mock_client, conn_opts, { scope = "database", force = true })
+		explorer.initialise_cache_async(mock_client, conn_opts, { scope = "database", force = true })
 		test_utils.poll(function()
 			return #captured_create_params > 0
 		end, {timeout_ms = 1000})
@@ -56,12 +57,12 @@ return {
 		assert(#captured_create_params == 1, "Database scope: Should call createsession")
 		assert(captured_create_params[1].DatabaseName == "MyUserDb", "Database scope: Should include DatabaseName in session params")
 
-		local cache = finder.get_cache()
+		local cache = explorer.get_cache()
 		local db_key_found = false
 		local db_scope_set = false
 
 		for k, v in pairs(cache) do
-			if k == finder.create_cache_key(conn_opts, "database") then
+			if k == explorer.create_cache_key(conn_opts, "database") then
 				db_key_found = true
 				local conn_opts = v.connection_options or {}
 				local finder_scope = v.scope or ""
@@ -79,7 +80,7 @@ return {
 		state._reset_all_state()
 		captured_create_params = {}
 
-		finder.initialise_cache_async(mock_client, conn_opts, { scope = "server", force = true })
+		explorer.initialise_cache_async(mock_client, conn_opts, { scope = "server", force = true })
 		test_utils.poll(function()
 			return #captured_create_params > 0
 		end, {timeout_ms = 1000})
@@ -88,11 +89,11 @@ return {
 		assert(captured_create_params[1].DatabaseName == nil, "Server scope: Should STRIP DatabaseName from session params")
 		assert(captured_create_params[1].ServerName == "MyServer", "Server scope: Should still include ServerName")
 
-		cache = finder.get_cache()
+		cache = explorer.get_cache()
 		local server_key_found = false
 		local server_scope_set = false
 		for k, v in pairs(cache) do
-			if k == finder.create_cache_key(conn_opts, "server") then
+			if k == explorer.create_cache_key(conn_opts, "server") then
 				server_key_found = true
 				local finder_scope = v.scope or ""
 				if finder_scope == "server" then

@@ -1,5 +1,6 @@
 local utils = require("mssql.utils")
 local mssql = require("mssql")
+local explorer = require("mssql.explorer")
 
 ---@class tests.utils
 local M = {}
@@ -518,8 +519,7 @@ M.test_scaffold = function(opts)
 	-- Uncleared Coroutine Reference in test suite: Once get_object_cache_async finishes, the refresh_coroutine reference is not cleared.
 	-- In standard operation, the ephemeral coroutine dies, and its status automatically becomes "dead".
 	-- However, because the test runner's coroutine remains alive and continues executing the tests, is_refreshing() continues to return true .
-	local find_object = require("mssql.find_object")
-	for _, entry in pairs(find_object.get_cache()) do
+	for _, entry in pairs(explorer.get_cache()) do
 		entry.refresh_coroutine = nil
 	end
 
@@ -562,8 +562,7 @@ M.wait_for_cache_content = function(item_label, opts)
 	}
 
 	local function check_cache()
-		local find_object = require("mssql.find_object")
-		local global_cache = find_object.get_cache()
+		local global_cache = explorer.get_cache()
 
 		if not global_cache then
 			return false

@@ -2,6 +2,7 @@ local finder = require("mssql.find_object")
 local state = require("mssql.state")
 local test_utils = require("tests.utils")
 local utils = require("mssql.utils")
+local explorer = require("mssql.explorer")
 
 return {
 	test_name = "Find Object scripts using the originating buffer's URI even if active window changes",
@@ -50,11 +51,11 @@ return {
 			end
 		}
 
-		local conn_opts = { server = "MyServer", database = "MyDb", user = "sa" }
+		local conn_opts = { server = "MyServer", database = "MyDb", user = "sa" } --[[@as MssqlConnectionOptions]]
 
 		-- Setup mock item in cache
-		local cache_key = finder.create_cache_key(conn_opts, "database")
-		finder.get_cache()[cache_key] = {
+		local cache_key = explorer.create_cache_key(conn_opts, "database")
+		explorer.get_cache()[cache_key] = {
 			cache = {
 				{
 					label = "MyTable",
@@ -73,7 +74,7 @@ return {
 
 		-- Mock vim.ui.select to switch buffer before making choice
 		local original_ui_select = vim.ui.select
-		vim.ui.select = function(items, opts, on_choice)
+		vim.ui.select = function(items, _opts, on_choice)
 			-- Switch the current buffer to simulate the user changing tabs/windows
 			vim.api.nvim_set_current_buf(switched_buf)
 			on_choice(items[1], 1)

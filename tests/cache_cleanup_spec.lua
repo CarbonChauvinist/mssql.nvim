@@ -1,6 +1,6 @@
 local mssql = require("mssql")
-local finder = require("mssql.find_object")
 local test_utils = require("tests.utils")
+local explorer = require("mssql.explorer")
 
 return {
 	test_name = "Cache should be cleaned up when buffer disconnects or closes",
@@ -11,9 +11,9 @@ return {
 			qm:initialise_cache_async({force = true})
 
 			local dc_conn_opts = qm and qm:get_connection_options()
-			local dc_cache_key = finder.create_cache_key(dc_conn_opts, "database")
+			local dc_cache_key = explorer.create_cache_key(dc_conn_opts, "database")
 			local cache_populated = test_utils.poll(function()
-				local cache = finder.get_cache()
+				local cache = explorer.get_cache()
 				return vim.iter(pairs(cache)):any(function(key)
 					return key == dc_cache_key
 				end)
@@ -23,7 +23,7 @@ return {
 			mssql.disconnect(buf)
 
 			local cache_cleared = test_utils.poll(function()
-				local cache = finder.get_cache()
+				local cache = explorer.get_cache()
 				return not vim.iter(pairs(cache)):any(function(key)
 					return key == dc_cache_key
 				end)
@@ -38,9 +38,9 @@ return {
 			qm:initialise_cache_async({ force = true })
 
 			local del_conn_opts = qm and qm:get_connection_options()
-			local del_conn_key = finder.create_cache_key(del_conn_opts, "database")
+			local del_conn_key = explorer.create_cache_key(del_conn_opts, "database")
 			local testdb_cached = test_utils.poll(function()
-				local cache = finder.get_cache()
+				local cache = explorer.get_cache()
 				return vim.iter(pairs(cache)):any(function(key)
 					return key == del_conn_key
 				end)
@@ -49,7 +49,7 @@ return {
 			cleanup() -- this deletes the buffer
 
 			local testdbb_cleared = test_utils.poll(function()
-				local cache = finder.get_cache()
+				local cache = explorer.get_cache()
 				return not vim.iter(pairs(cache)):any(function(key)
 					return key == del_conn_key
 				end)

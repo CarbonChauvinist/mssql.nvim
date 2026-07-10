@@ -1,6 +1,7 @@
 local mssql = require("mssql")
 local picker = require("mssql.picker")
 local test_utils = require("tests.utils")
+local explorer = require("mssql.explorer")
 
 -- mock picker allows to intercept call to pick and immediately trigger callback
 local original_pick = picker.pick
@@ -29,7 +30,7 @@ return {
 			-- even though we clear the refresh_coroutines in test_scaffold
 			-- must still clear refresh_coroutine explicitly here after call to qm:initialise_cache_async
 			-- since tests run directly inside test runners coroutine, any coroutine.running() calls return the test runner's coroutine
-			for _, entry in pairs(require("mssql.find_object").get_cache()) do
+			for _, entry in pairs(require("mssql.explorer").get_cache()) do
 				entry.refresh_coroutine = nil
 			end
 
