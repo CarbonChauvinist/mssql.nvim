@@ -107,12 +107,20 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 	local result, err = coroutine.yield()
 
 	if err then return nil, err end
-
-	if utils.is_empty(result) or utils.is_empty(result.rootNode) then
-		if not _G.dummy_buf_id then
-			utils.log_error("Session created but missing rootNode. Result: " .. vim.inspect(result))
+	if not result or result.success == false or utils.is_empty(result.rootNode) then
+		local msg = "Session creation failed"
+		if result then
+			if not utils.is_empty(result.errorMessage) then
+				msg = msg .. ": " .. result.errorMessage
+			end
+			if result.errorCode == "CREATE_SESSION_TIMEOUT" then
+				msg = msg .. " (Server Connection Timed Out)"
+			end
 		end
-		return nil
+		if not _G.dummy_buf_id then
+			utils.log_error(msg)
+		end
+		return nil, msg
 	end
 
 	if result.rootNode.objectType == "Server" then
@@ -172,6 +180,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
     local expand_count = 0
     local co = coroutine.running()
 	local timeout_timer
+	local retried_paths = {}
 
 	-- setup traversal paths
 	-- Note: session.target_path might be nil if we connected to Root (server scope)
@@ -223,6 +232,27 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 	end
 
 	local on_expand_result = function(_, expand_result, _)
+		if expand_result and not utils.is_empty(expand_result.errorMessage) then
+			local msg = expand_result.errorMessage
+			local is_timeout = expand_result.errorCode == "EXPAND_TIMEOUT"
+			if is_timeout then
+				msg = msg .. " (Server Expansion Timed Out)"
+			end
+
+			-- Retry logic for server-side expansion timeouts (one attempt per node path)
+			if is_timeout and expand_result.nodePath and not retried_paths[expand_result.nodePath] then
+				retried_paths[expand_result.nodePath] = true
+				utils.log_info("Timeout expanding " .. tostring(expand_result.nodePath) .. " . Retrying...")
+				expand(expand_result.nodePath)
+				expand_count = expand_count - 1 -- cancel out double-increment from expand() call
+				return
+			end
+
+			utils.log_warn("Object Explorer expansion failure: " .. tostring(msg))
+			clean_up_and_return(nil, msg)
+			return
+		end
+
 		local nodes = (not utils.is_empty(expand_result.nodes) and expand_result.nodes) or {}
 
 		for _, node in ipairs(nodes) do
