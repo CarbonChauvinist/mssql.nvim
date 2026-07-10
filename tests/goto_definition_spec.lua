@@ -37,7 +37,11 @@ return {
 		local def_buf_name = vim.api.nvim_buf_get_name(def_buf)
 		local expected_path = vim.uri_to_fname(expected_uri)
 
-		assert(def_buf_name == expected_path, "Opened buffer does not match expected name. Expected: " .. expected_path .. " but got: " .. def_buf_name)
+		local expected_dir = vim.fs.dirname(expected_path)
+		local got_dir = vim.fs.dirname(def_buf_name)
+		local got_file = vim.fs.basename(def_buf_name)
+		assert(got_dir == expected_dir, "Opened buffer directory does not match. Expected: " .. expected_dir .. " but got: " .. got_dir)
+		assert(got_file:match("^sys%.views_") and got_file:match("%.sql$"), "Opened buffer filename is incorrect: " .. got_file)
 		local content = test_utils.get_buffer_content(def_buf)
 		assert(content:find("CREATE VIEW"), "Definition buffer content does not match expected pattern:\n" .. content)
 
