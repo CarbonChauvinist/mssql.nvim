@@ -1,6 +1,7 @@
 local mssql = require("mssql")
+local test_utils = require("tests.utils")
 
-function iif(cond, true_value, false_value)
+local iif = function(cond, true_value, false_value)
 	if cond then
 		return true_value
 	else
@@ -20,18 +21,6 @@ local function tools_file_exists()
 	return false
 end
 
-local function setup_async()
-	local co = coroutine.running()
-	mssql.setup({
-		open_results_in = "current_window",
-	}, function()
-		vim.schedule(function()
-			coroutine.resume(co)
-		end)
-	end)
-	coroutine.yield()
-end
-
 return {
 	test_name = "Setup should download and extract the sql tools",
 	run_test_async = function()
@@ -39,7 +28,7 @@ return {
 
 		if skip_request and tools_file_exists() then
 			print("    [INFO] Skipping download (SKIP_DOWNLOAD set and file exists)")
-			setup_async()
+			test_utils.setup_mssql_async()
 			return
 		end
 
@@ -51,7 +40,7 @@ return {
 			assert(download_finished, "Download did not complete")
 		end, 120000)
 
-		setup_async()
+		test_utils.setup_mssql_async()
 		download_finished = true
 		assert(tools_file_exists(), "The sql server tools file does not exist among the downloads")
 	end,
