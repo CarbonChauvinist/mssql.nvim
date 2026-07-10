@@ -1,6 +1,6 @@
 local utils = require("mssql.utils")
 local finder = require("mssql.find_object")
-require("mssql.default_opts")
+local explorer = require("mssql.explorer")
 
 local MssqlQueryManager = {}
 MssqlQueryManager.__index = MssqlQueryManager
@@ -484,7 +484,7 @@ function MssqlQueryManager:initialise_cache_async(opts)
 		return false
 	end
 
-	return finder.initialise_cache_async(
+	return explorer.initialise_cache_async(
 		self.client,
 		self.last_connect_params.connection.options,
 		{ scope = scope, force = force }
@@ -520,7 +520,7 @@ function MssqlQueryManager:is_refreshing()
 	local options = self:get_connection_options()
 	if not options then return nil end
 
-	return finder.is_refreshing(options, "database") or finder.is_refreshing(options, "server")
+	return explorer.is_refreshing(options, "database") or explorer.is_refreshing(options, "server")
 end
 
 --- Handlers (called by LSP callbacks)
@@ -567,8 +567,8 @@ function MssqlQueryManager:cleanup()
 
 	local opts = self:get_connection_options()
 	if opts then
-		finder.cancel_refresh(opts, "database")
-		finder.cancel_refresh(opts, "server")
+		explorer.cancel_refresh(opts, "database")
+		explorer.cancel_refresh(opts, "server")
 	end
 
 	self.state = MssqlQueryManager.states.disconnected

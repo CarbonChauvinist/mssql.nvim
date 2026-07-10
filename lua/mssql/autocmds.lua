@@ -1,5 +1,6 @@
 local state = require("mssql.state")
 local utils = require("mssql.utils")
+local explorer = require("mssql.explorer")
 
 local M = {}
 
@@ -18,7 +19,7 @@ M.clean_cache = function()
 		end
 	end
 
-	require("mssql.find_object").delete_unused_cache(in_use_connections)
+	explorer.delete_unused_cache(in_use_connections)
 end
 
 ---@param opts MssqlOptions
