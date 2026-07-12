@@ -2,6 +2,7 @@ local utils = require("mssql.utils")
 
 local M = {}
 
+---@type integer?
 local mssql_window
 
 ---@param table string[][]
@@ -287,6 +288,23 @@ local function show_result_set_async(result_set_summary, subset_params, opts)
 	end
 end
 
+---Helper to open a buffer in a split (horizontal/vertical) window, reusing it if valid.
+---@param bufnr integer
+---@param split_command "split"|"vsplit"
+local open_in_split = function(bufnr, split_command)
+	local original_window = vim.api.nvim_get_current_win()
+
+	-- open a split if we haven't already
+	if not (mssql_window and vim.api.nvim_win_is_valid(mssql_window)) then
+		vim.cmd(split_command)
+		mssql_window = vim.api.nvim_get_current_win()
+	end
+
+	vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
+	vim.api.nvim_win_set_buf(mssql_window, bufnr)
+	vim.api.nvim_set_current_win(original_window)
+end
+
 ---Navigate pages in query results buffer
 ---@param direction "next" | "prev" | "first" | "last"
 M.navigate_page = function(direction)
@@ -348,30 +366,10 @@ M.show_results_buffer_options = {
 		vim.api.nvim_set_current_buf(bufnr)
 	end,
 	split = function(bufnr)
-		local original_window = vim.api.nvim_get_current_win()
-
-		-- open a split if we haven't done already
-		if not (mssql_window and vim.api.nvim_win_is_valid(mssql_window)) then
-			vim.cmd("split")
-			mssql_window = vim.api.nvim_get_current_win()
-		end
-
-		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
-		vim.api.nvim_win_set_buf(mssql_window, bufnr)
-		vim.api.nvim_set_current_win(original_window)
+		open_in_split(bufnr, "split")
 	end,
 	vsplit = function(bufnr)
-		local original_window = vim.api.nvim_get_current_win()
-
-		-- open a split if we haven't done already
-		if not (mssql_window and vim.api.nvim_win_is_valid(mssql_window)) then
-			vim.cmd("vsplit")
-			mssql_window = vim.api.nvim_get_current_win()
-		end
-
-		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
-		vim.api.nvim_win_set_buf(mssql_window, bufnr)
-		vim.api.nvim_set_current_win(original_window)
+		open_in_split(bufnr, "vsplit")
 	end,
 }
 
