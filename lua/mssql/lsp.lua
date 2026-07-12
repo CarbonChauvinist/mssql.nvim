@@ -30,7 +30,6 @@ local M = {
 	hide_initellisense_ready = false
 }
 local lsp_name = "mssql_ls"
-local cleanup_group = vim.api.nvim_create_augroup("MssqlLspCleanup", { clear = true })
 
 ---Refreshes the object cache for all active connections
 local function clean_cache()
