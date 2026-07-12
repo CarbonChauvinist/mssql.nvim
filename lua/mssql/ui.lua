@@ -149,6 +149,8 @@ M.set_show_results_option = function(opts)
 	end
 end
 
+---Clears all text content from the SQL messages buffer
+---@return nil
 M.clear_message_buffer = function()
 	if message_buffer and vim.api.nvim_buf_is_valid(message_buffer) then
 		vim.api.nvim_set_option_value("modifiable", true, { buf = message_buffer })
@@ -157,7 +159,11 @@ M.clear_message_buffer = function()
 	end
 end
 
+---@type table<string, function>
 M.view_message_options = {
+	---Displays message as a Neovim notification
+	---@param message string
+	---@param is_error boolean
 	notification = function(message, is_error)
 		if is_error then
 			utils.log_error(message)
@@ -165,6 +171,10 @@ M.view_message_options = {
 			utils.log_info(message)
 		end
 	end,
+
+	---Appends message to the dedicated messages buffer.
+	---@param message string
+	---@param is_error boolean
 	buffer = function(message, is_error)
 		local opts = state.get_config()
 
@@ -198,8 +208,11 @@ M.view_message_options = {
 	end,
 }
 
+---@type table<function>
 M.lualine_component = {
+	---Status line formatter component showing MSSQL connection/execution state.
 	---@param bufnr? integer
+	---@return string?
 	function(bufnr)
 		if type(bufnr) ~= "number" then
 			bufnr = vim.api.nvim_get_current_buf()
@@ -274,6 +287,10 @@ M.lualine_component = {
 
 		return table.concat(status_parts, "  ")
 	end,
+
+	---Condition function to control visibility of the lualine statue component.
+	---@param bufnr? integer
+	---@return boolean
 	cond = function(bufnr)
 		if type(bufnr) ~= "number" then
 			bufnr = vim.api.nvim_get_current_buf()
@@ -286,6 +303,7 @@ M.lualine_component = {
 	end,
 }
 
+---Resolves the configured message view output destination to its matching function.
 ---@param opts MssqlConfig
 M.set_view_message_option = function(opts)
 	if type(opts.view_messages_in) == "string" and M.view_message_options[opts.view_messages_in] then

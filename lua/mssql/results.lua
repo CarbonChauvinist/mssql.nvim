@@ -5,9 +5,10 @@ local M = {}
 ---@type integer?
 local mssql_window
 
+---Truncates long cells and replaces literal newlines with formatted string representations.
 ---@param table string[][]
 ---@param limit integer
-local function sanitise(tbl, limit)
+local sanitise = function(tbl, limit)
 	for _, record in ipairs(tbl) do
 		for index, value in ipairs(record) do
 			local str = tostring(value)
@@ -22,11 +23,12 @@ local function sanitise(tbl, limit)
 	end
 end
 
+---Calculates the maximum display width required for a given column.
 ---@param column_header string
 ---@param rows string[][]
 ---@param column_index integer
 ---@return integer
-local function column_width(column_header, rows, column_index)
+local column_width = function(column_header, rows, column_index)
 	local row_max = vim.iter(rows)
 		:map(function(record)
 			return vim.fn.strdisplaywidth(record[column_index])
@@ -36,10 +38,11 @@ local function column_width(column_header, rows, column_index)
 	return math.max(vim.fn.strdisplaywidth(column_header), row_max)
 end
 
+---Calculates the display widths for all columns.
 ---@param column_headers string[]
 ---@param rows string[][]
 ---@return integer[]
-local function column_widths(column_headers, rows)
+local column_widths = function(column_headers, rows)
 	if not column_headers then
 		return {}
 	end
@@ -51,21 +54,23 @@ local function column_widths(column_headers, rows)
 		:totable()
 end
 
+---Appends padding characters to the right side of a string up to the specified display width.
 ---@param str string
 ---@param len integer
 ---@param char string
 ---@return string
-local function right_pad(str, len, char)
+local right_pad = function(str, len, char)
 	if vim.fn.strdisplaywidth(str) >= len then
 		return str
 	end
 	return str .. string.rep(char, len - vim.fn.strdisplaywidth(str))
 end
 
+---Converts a row of cells into a formatted Markdown table row.
 ---@param row string[]
 ---@param widths integer[]
 ---@return string
-local function row_to_string(row, widths)
+local row_to_string = function(row, widths)
 	local padded_cells = vim.iter(ipairs(row))
 		:map(function(column_index, value)
 			return right_pad(value, widths[column_index], " ")
@@ -74,9 +79,10 @@ local function row_to_string(row, widths)
 	return "| " .. table.concat(padded_cells, " | ") .. " |"
 end
 
+---Generates a Markdown table header divide line.
 ---@param widths integer[]
 ---@return string
-local function header_divider(widths)
+local header_divider = function(widths)
 	if not widths then
 		return ""
 	end
@@ -89,11 +95,12 @@ local function header_divider(widths)
 	return row_to_string(dashes_row, widths)
 end
 
+---Formats column headers and rows into printable Markdown lines.
 ---@param column_headers string[]
 ---@param rows string[][]
 ---@param max_width integer
 ---@return string[]
-local function pretty_print(column_headers, rows, max_width)
+local pretty_print = function(column_headers, rows, max_width)
 	if not column_headers then
 		return { "" }
 	end
@@ -111,7 +118,7 @@ local function pretty_print(column_headers, rows, max_width)
 	return lines
 end
 
-
+---Creates a new unlisted buffer for query results and sets its filetype.
 ---param opts? { name: string, filetype:? string, qm:? MssqlQueryManager }
 ---@return integer bufnr
 local function create_buffer(opts)
@@ -131,9 +138,10 @@ local function create_buffer(opts)
 	return bufnr
 end
 
+---Writes formatted lines to the result buffer and configures read-only buffer options.
 ---@param lines string[]
 ---@param bufnr integer
-local function display_markdown(lines, bufnr)
+local display_markdown = function(lines, bufnr)
 	-- due to pagination need to make writeable/modifiable at first
 	vim.api.nvim_set_option_value("modifiable", true, { buf = bufnr })
 	vim.api.nvim_set_option_value("readonly", false, { buf = bufnr })
@@ -147,11 +155,12 @@ local function display_markdown(lines, bufnr)
 	vim.api.nvim_set_option_value("modifiable", false, { buf = bufnr })
 end
 
---- Fetches rows to render in results buffer. Accounts for offset allowing pagination.
----@param bufnr? integer The buffer number to render in (optional, uses current buffer if invalid)
+---Fetches a subset of rows from the query dataset and renders them in the results buffer.
+---Accounts for offset allowing pagination.
+---@param bufnr? integer The buffer number to render in (defaults to current buffer)
 ---@param new_offset? integer The new row offset for pagination (optional, clamped to valid range)
 ---@return nil
-local function fetch_and_render_page(bufnr, new_offset)
+local fetch_and_render_page = function(bufnr, new_offset)
 	if not (bufnr and vim.api.nvim_buf_is_valid(bufnr)) then
 		bufnr = vim.api.nvim_get_current_buf()
 	end
@@ -218,10 +227,11 @@ local function fetch_and_render_page(bufnr, new_offset)
 	end)
 end
 
+---Asynchronously fetches and displays a specific result set in a new results buffer.
 ---@param result_set_summary MssqlResultSetSummary
 ---@param subset_params SubsetParams
 ---@param opts MssqlOptions
-local function show_result_set_async(result_set_summary, subset_params, opts)
+local show_result_set_async = function(result_set_summary, subset_params, opts)
 	local column_headers = vim.iter(result_set_summary.columnInfo)
 		:map(function(i)
 			return i.columnName
@@ -307,6 +317,7 @@ end
 
 ---Navigate pages in query results buffer
 ---@param direction "next" | "prev" | "first" | "last"
+---@return nil
 M.navigate_page = function(direction)
 	utils.try_resume(coroutine.create(function()
 		local buf = vim.api.nvim_get_current_buf()
@@ -339,7 +350,7 @@ function M.last_page() M.navigate_page("last") end
 ---Get pagination status string for display in statusline
 ---@param bufnr? integer
 ---@return string
-function M.get_pagination_status(bufnr)
+M.get_pagination_status = function(bufnr)
 	-- need to sanitize, for e.g. heirline passes component table as first argument
 	if type(bufnr) ~= "number" then
 		bufnr = vim.api.nvim_get_current_buf()
@@ -360,21 +371,31 @@ function M.get_pagination_status(bufnr)
 	return string.format("  Rows %d-%d of %d  ", start_row, end_row, info.totalRows)
 end
 
+---@type table<string, function>
 M.show_results_buffer_options = {
+	---Opens the buffer in the current window.
+	---@param bufnr integer
 	current_window = function(bufnr)
 		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
 		vim.api.nvim_set_current_buf(bufnr)
 	end,
+
+	---Opens the buffer in a horizontal split window.
+	---@param bufnr integer
 	split = function(bufnr)
 		open_in_split(bufnr, "split")
 	end,
+
+	---Opens the buffer in a vertical split window.
+	---@param bufnr integer
 	vsplit = function(bufnr)
 		open_in_split(bufnr, "vsplit")
 	end,
 }
 
--- If the open_results_in is a string, sets it to the appropriate function
+---Resolves the open_results_in config option to its corresponding function.
 ---@param opts? MssqlConfig
+---@return nil
 M.set_show_results_option = function(opts)
 	opts = opts or {}
 	if type(opts.open_results_in) == "string" and M.show_results_buffer_options[opts.open_results_in] then
@@ -391,8 +412,10 @@ M.set_show_results_option = function(opts)
 	end
 end
 
+---Asynchronously displays all result sets for a completed query execution.
 ---@param opts MssqlOptions
 ---@param result MssqlQueryExecuteSubsetResult
+---@return nil
 M.display = function(opts, result)
 	if utils.is_empty(result) or utils.is_empty(result.batchSummaries) then return end
 	local owner_buf = vim.fn.bufnr(vim.uri_to_fname(result.ownerUri))
