@@ -2,7 +2,9 @@ local utils = require("mssql.utils")
 
 local M = {}
 
----@param tbl string[][]
+local mssql_window
+
+---@param table string[][]
 ---@param limit integer
 local function sanitise(tbl, limit)
 	for _, record in ipairs(tbl) do
@@ -340,16 +342,69 @@ function M.get_pagination_status(bufnr)
 	return string.format("  Rows %d-%d of %d  ", start_row, end_row, info.totalRows)
 end
 
+M.show_results_buffer_options = {
+	current_window = function(bufnr)
+		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
+		vim.api.nvim_set_current_buf(bufnr)
+	end,
+	split = function(bufnr)
+		local original_window = vim.api.nvim_get_current_win()
+
+		-- open a split if we haven't done already
+		if not (mssql_window and vim.api.nvim_win_is_valid(mssql_window)) then
+			vim.cmd("split")
+			mssql_window = vim.api.nvim_get_current_win()
+		end
+
+		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
+		vim.api.nvim_win_set_buf(mssql_window, bufnr)
+		vim.api.nvim_set_current_win(original_window)
+	end,
+	vsplit = function(bufnr)
+		local original_window = vim.api.nvim_get_current_win()
+
+		-- open a split if we haven't done already
+		if not (mssql_window and vim.api.nvim_win_is_valid(mssql_window)) then
+			vim.cmd("vsplit")
+			mssql_window = vim.api.nvim_get_current_win()
+		end
+
+		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
+		vim.api.nvim_win_set_buf(mssql_window, bufnr)
+		vim.api.nvim_set_current_win(original_window)
+	end,
+}
+
+-- If the open_results_in is a string, sets it to the appropriate function
+---@param opts? MssqlConfig
+M.set_show_results_option = function(opts)
+	opts = opts or {}
+	if type(opts.open_results_in) == "string" and M.show_results_buffer_options[opts.open_results_in] then
+		opts.open_results_in = M.show_results_buffer_options[opts.open_results_in]
+	elseif type(opts.open_results_in) == "function" then
+		return
+	else
+		utils.log_error(
+			vim.inspect(opts.open_results_in)
+				.. " is not a valid option for open_results_in. Must be one of: "
+				.. table.concat(vim.tbl_keys(M.show_results_buffer_options), ", ")
+				.. ", or a function"
+		)
+	end
+end
 
 ---@param opts MssqlOptions
 ---@param result MssqlQueryExecuteSubsetResult
-function M.display_query_results(opts, result)
+M.display = function(opts, result)
 	if utils.is_empty(result) or utils.is_empty(result.batchSummaries) then return end
 	local owner_buf = vim.fn.bufnr(vim.uri_to_fname(result.ownerUri))
 	local qm = require("mssql.state").get_query_manager(owner_buf)
 
-	if qm then
-		qm:clear_result_buffers()
+	-- delete existing result buffers
+	if qm then qm:clear_result_buffers() end
+
+	if utils.is_empty(result) or utils.is_empty(result.batchSummaries) then
+		return
 	end
 
 	for batch_index, batch_summary in ipairs(result.batchSummaries) do

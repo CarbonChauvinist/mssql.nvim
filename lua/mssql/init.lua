@@ -6,7 +6,7 @@ local lsp = require("mssql.lsp")
 local interface = require("mssql.interface")
 local default_opts = require("mssql.default_opts")
 local downloader = require("mssql.tools_downloader")
-local display_query_results = require("mssql.display_query_results")
+local results = require("mssql.results")
 local autocmds = require("mssql.autocmds")
 local explorer = require("mssql.explorer")
 local query_manager_module = require("mssql.query_manager")
@@ -90,7 +90,7 @@ local function setup_async(user_opts)
 	opts.connections_file = opts.connections_file or joinpath(opts.data_dir, "connections.json")
 
 	state.set_config(opts)
-	ui.set_show_results_option(opts)
+	results.set_show_results_option(opts)
 	ui.set_view_message_option(opts)
 	make_directory(opts.data_dir)
 
@@ -288,9 +288,10 @@ M.execute_query = utils.async(function(opts)
 		query = utils.get_selected_text(bufnr)
 	end
 
+	ui.clear_message_buffer()
 	result = qm:execute_async({ query = query, line = line, column = column })
-	if result then
-		display_query_results.display_query_results(curr_conf, result)
+	if result then -- since cancelled query returns nil, have to check for nil before displaying
+		results.display(curr_conf, result)
 	end
 end)
 
@@ -374,7 +375,7 @@ M.find_object = utils.async(function(opts)
 		local result, err = qm:execute_async({ query = item.script })
 
 		if result then
-			display_query_results.display_query_results(curr_conf, result)
+			results.display(curr_conf, result)
 		elseif err then
 			utils.log_error("Failed to execute generated SELECT: " .. tostring(err))
 		end

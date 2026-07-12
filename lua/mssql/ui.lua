@@ -1,6 +1,6 @@
 local utils = require("mssql.utils")
 local state = require("mssql.state")
-local display_query_results = require("mssql.display_query_results")
+local results = require("mssql.results")
 local lsp = require("mssql.lsp")
 
 local M = {}
@@ -157,7 +157,6 @@ M.clear_message_buffer = function()
 	end
 end
 
-
 M.view_message_options = {
 	notification = function(message, is_error)
 		if is_error then
@@ -213,7 +212,7 @@ M.lualine_component = {
 		local config = state.get_config()
 
 		if qri then
-			return display_query_results.get_pagination_status(bufnr)
+			return results.get_pagination_status(bufnr)
 		elseif not qm then
 			return
 		end
