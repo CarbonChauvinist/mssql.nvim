@@ -7,7 +7,7 @@ local M = {}
 M.setup = function(opts)
 	vim.api.nvim_create_augroup("AutoNameSQL", { clear = true })
 
-	-- Reset the buffer to the file name upon saving
+	-- Sends query/connectionUriChanged notification to STS on `:w` or `:saveas`
 	vim.api.nvim_create_autocmd("BufWritePost", {
 		group = "AutoNameSQL",
 		pattern = "*.sql",
@@ -39,7 +39,7 @@ M.setup = function(opts)
 		})
 	end
 
-	-- clean the sql object cache on buffer close
+	-- Cleans up results buffers, timers and QM state on buffer close
 	vim.api.nvim_create_autocmd("BufDelete", {
 		group = "AutoNameSQL",
 		callback = function(args)
@@ -57,7 +57,6 @@ M.setup = function(opts)
 
 		end,
 	})
-
 end
 
 return M
