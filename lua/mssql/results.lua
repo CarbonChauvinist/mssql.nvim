@@ -227,6 +227,111 @@ local fetch_and_render_page = function(bufnr, new_offset)
 	end)
 end
 
+---Formats query results as a classic space-aligned CLI text table (like sqlcmd)
+---@param column_headers string[]
+---@param rows string[][]
+---@param max_width integer
+---@return string[] lines
+local format_as_text = function(column_headers, rows, max_width)
+	if not column_headers then return { "" } end
+
+	sanitise(rows, max_width)
+	local widths = column_widths(column_headers, rows)
+
+	-- headers: "ID   Make     PersonId"
+	local header_cells = {}
+	local divider_cells = {}
+	for idx, col in ipairs(column_headers) do
+		table.insert(header_cells, right_pad(col, widths[idx], " "))
+		table.insert(divider_cells, string.rep("-", widths[idx]))
+	end
+
+	local lines = {
+		table.concat(header_cells, "  "),
+		table.concat(divider_cells, "  ")
+	}
+
+	for _, row in ipairs(rows) do
+		local row_cells = {}
+		for idx, val in ipairs(row) do
+			table.insert(row_cells, right_pad(val, widths[idx], " "))
+		end
+		table.insert(lines, table.concat(row_cells, "  "))
+	end
+
+	return lines
+end
+
+
+---Escapes a value for safe CSV representation
+---@params val any
+---@return string
+local csv_escape = function(val)
+	val = tostring(val or "")
+	if val:find('[,"\n\r]') then
+		return '"' .. val:gsub('"', '""') .. '"'
+	end
+	return val
+end
+
+---Formats query results as comma-separated values (CSV)
+---@param column_headers string[]
+---@param rows string[][]
+---@return string[] lines
+local format_as_csv = function(column_headers, rows)
+	if not column_headers then return { "" } end
+
+	local lines = {}
+
+	-- headers: "ID,Make,PersonId"
+	local header_cells = {}
+	for _, col in ipairs(column_headers) do
+		table.insert(header_cells, csv_escape(col))
+	end
+	table.insert(lines, table.concat(header_cells, ","))
+
+	-- rows: "1,Merc,1"
+	for _, row in ipairs(rows) do
+		local row_cells = {}
+		for _, val in ipairs(row) do
+			table.insert(row_cells, csv_escape(val))
+		end
+		table.insert(lines, table.concat(row_cells, ","))
+	end
+
+	return lines
+end
+
+---Converts columns and rows into a formatted JSON string
+---@param column_headers string[]
+---@param rows string[][]
+---@return string[] lines
+local format_as_json = function(column_headers, rows)
+	local objects = {}
+	for _, row in ipairs(rows) do
+		local obj = {}
+		for idx, col in ipairs(column_headers) do
+			obj[col] = row[idx]
+		end
+		table.insert(objects, obj)
+	end
+
+	local raw_json = vim.json.encode(objects)
+
+	local success, formatted = pcall(function()
+		if vim.fn.executable("jq") == 1 then
+			return vim.fn.system("jq .", raw_json)
+		end
+		error("jq not available")
+	end)
+
+	if success and formatted and formatted ~= "" then
+		return vim.split(formatted:gsub("\r", ""), "\n")
+	else
+		return { raw_json }
+	end
+end
+
 ---Asynchronously fetches and displays a specific result set in a new results buffer.
 ---@param result_set_summary MssqlResultSetSummary
 ---@param subset_params SubsetParams
@@ -239,21 +344,33 @@ local show_result_set_async = function(result_set_summary, subset_params, opts)
 		:totable()
 
 	local rows = utils.get_rows_async(subset_params)
-	local lines = pretty_print(column_headers, rows, opts.max_column_width)
-	local extension = opts.results_buffer_extension
-	extension = extension or ""
-	if extension ~= "" then
-		extension = "." .. extension
+	local extension, filetype, lines
+	if opts.results_output_format == "json" then
+		extension = "json"
+		filetype = "json"
+		lines = format_as_json(column_headers, rows)
+	elseif opts.results_output_format == "csv" then
+		extension = "csv"
+		filetype = "csv"
+		lines = format_as_csv(column_headers, rows)
+	elseif opts.results_output_format == "text" then
+		extension = "txt"
+		filetype = ""
+		lines = format_as_text(column_headers, rows, opts.max_column_width)
+	elseif opts.results_output_format == "markdown" then
+		extension = "md"
+		filetype = "markdown"
+		lines = pretty_print(column_headers, rows, opts.max_column_width)
 	end
 
 	local owner_buf = vim.fn.bufnr(vim.uri_to_fname(subset_params.ownerUri))
 	local qm = require("mssql.state").get_query_manager(owner_buf)
 
 	local orig_name = vim.api.nvim_buf_get_name(owner_buf)
-	local short_name = vim.fn.fnamemodify(orig_name, ":t")
+	local short_name = vim.fn.fnamemodify(orig_name, ":t:r")
 	if short_name == "" then short_name = tostring(owner_buf) end
 
-	local name = string.format("results %d-%d [%s]%s",
+	local name = string.format("results %d-%d [%s].%s",
 		subset_params.batchIndex + 1,
 		subset_params.resultSetIndex + 1,
 		short_name,
@@ -262,7 +379,7 @@ local show_result_set_async = function(result_set_summary, subset_params, opts)
 
 	local buf = create_buffer({
 		name = name,
-		filetype = opts.results_buffer_filetype,
+		filetype = filetype,
 		qm = qm,
 	})
 

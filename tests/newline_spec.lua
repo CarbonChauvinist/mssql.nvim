@@ -2,7 +2,7 @@ local mssql = require("mssql")
 local test_utils = require("tests.utils")
 
 return {
-	test_name = "Embedded newlines should be escaped in query results",
+	test_name = "Embedded newlines should be escaped in 'text' query results",
 	run_test_async = function()
 		local buf, _, _, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
 		local query = "SELECT 'Line1' + CHAR(10) + 'Line2' AS NewLineCol;"

@@ -77,6 +77,7 @@
 ---@class MssqlConfig
 ---@field keymap_prefix string? Set up keymaps with this prefix.
 ---@field open_results_in ("split"|"vsplit"|"current_window"|fun(bufnr: integer))? How to open the results buffer.
+---@field results_output_format ("markdown"|"json"|"csv"|"text")? How results are displayed in results buffer.
 ---@field view_messages_in ("notification"|"buffer"|fun(msg: string, is_error: boolean))? Where to view SQL server messages.
 ---@field max_rows integer? Max rows to return (default 100).
 ---@field max_column_width integer? Max text length before truncation.
@@ -87,8 +88,6 @@
 ---@field execute_generated_select_statements boolean? Auto-execute SELECTs from finder.
 ---@field lsp_settings table? Settings passed to mssql language server.
 ---@field sql_buffer_options table<string, any>? Vim options for SQL buffers.
----@field results_buffer_extension string? File extension for results (default "md").
----@field results_buffer_filetype string? Filetype for results (default "markdown").
 ---@field results_keymaps MssqlResultsKeymaps|boolean? Keymaps for results buffer (false to disable).
 ---@field find_object_keymaps table<string, string>? Keymaps for find_object picker (Key -> Action ID).
 ---@field connections_file string? Path to connections.json.
@@ -103,6 +102,7 @@
 ---@class MssqlOptions : MssqlConfig
 ---@field keymap_prefix string
 ---@field open_results_in ("split"|"vsplit"|"current_window"|fun(bufnr: integer))
+---@field output_format ("markdown"|"json"|"csv"|"text")
 ---@field view_messages_in ("notification"|"buffer"|fun(msg: string, is_error: boolean))
 ---@field max_rows integer
 ---@field max_column_width integer
@@ -113,8 +113,6 @@
 ---@field execute_generated_select_statements boolean
 ---@field lsp_settings table
 ---@field sql_buffer_options table<string, any>
----@field results_buffer_extension string
----@field results_buffer_filetype string
 ---@field results_keymaps MssqlResultsKeymaps|boolean
 ---@field find_object_keymaps table<string, string>
 ---@field connections_file string

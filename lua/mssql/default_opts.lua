@@ -14,6 +14,15 @@ local M = {
   --]]
 	open_results_in = "split",
 
+	--[[ How query outputs will be displayed.
+  Valid options are:
+  "markdown" - Results displayed as a formatted Markdown table
+  "json"     - Results displayed as structured JSON (requires 'jq' for formatting)
+  "csv"      - Results displayed as csv
+  "text"     - Results displayed as unformatted plain text
+	--]]
+    results_output_format = "markdown",
+
 	--[[ Where to view messages sent from sql server (eg when executing queries)
   Valid options are:
   "notification"                        - View as a vim notification
@@ -72,12 +81,6 @@ local M = {
 		shiftwidth = 4,
 		softtabstop = 4,
 	},
-
-	-- The file extension of buffers that show query results
-	results_buffer_extension = "md",
-
-	-- The filetype (used in neovim to determine the language) of buffers that show query results. Set this to "" to disable markdown rendering.
-	results_buffer_filetype = "markdown",
 
 	-- Keymaps for the results buffer (set to false to disable)
 	---@type MssqlResultsKeymaps
