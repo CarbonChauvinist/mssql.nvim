@@ -6,6 +6,7 @@ return {
 	test_name = "Find Object (Server Scope) respects Allow/Deny lists",
 	run_test_async = function()
 		state._reset_all_state()
+		test_utils.setup_mssql_async()
 
 		local expanded_paths = {}
 		local session_id = "sess_filter_test"

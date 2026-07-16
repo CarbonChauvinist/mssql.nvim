@@ -122,7 +122,7 @@ M.switch_database = utils.async(function(bufnr, callback)
 	end
 
 	cmds.switch_database_async(bufnr)
-	qm:initialise_cache_async()
+	qm:initialise_cache_async({ is_background = true })
 	autocmds.clean_cache()
 	if callback then callback() end
 end)
@@ -162,7 +162,7 @@ M.connect = utils.async(function(bufnr)
 	end
 
 	if cmds.perform_connect_async(curr_conf, qm, bufnr) then
-		qm:initialise_cache_async()
+		qm:initialise_cache_async( { is_background = true })
 	end
 	autocmds.clean_cache()
 end)
@@ -193,7 +193,7 @@ M.refresh_cache = function(bufnr)
 	vim.cmd("redrawstatus")
 
 	coroutine.resume(coroutine.create(function()
-		qm:initialise_cache_async({ force = true })
+		qm:initialise_cache_async({ force = true, auto_init = true })
 		ui.set_caching_status(false)
 		vim.cmd("redrawstatus")
 	end))
@@ -358,7 +358,7 @@ M.find_object = utils.async(function(opts)
 	ui.set_caching_status(true)
 	vim.cmd("redrawstatus")
 
-	local success = qm:initialise_cache_async({ scope = scope })
+	local success = qm:initialise_cache_async({ scope = scope, is_background = false })
 
 	ui.set_caching_status(false)
 	vim.cmd("redrawstatus")

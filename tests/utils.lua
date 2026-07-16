@@ -370,7 +370,8 @@ M.setup_mssql_async = function(opts)
 	local test_defaults = {
 		open_results_in = "current_window",
 		enable_connection_pooling = false,
-		explorer_categories = { "tables", "views", "stored_procedures", "functions" }
+		explorer_categories = { "tables", "views", "stored_procedures", "functions" },
+		auto_init_explorer = true,
 	} --[[@as MssqlConfig]]
 	opts = vim.tbl_deep_extend("keep", opts, test_defaults)
 

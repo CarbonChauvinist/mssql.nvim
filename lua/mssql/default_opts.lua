@@ -49,6 +49,9 @@ local M = {
 	--]]
 	explorer_categories = { "stored_procedures" },
 
+	-- Automatically initialize the Object Explorer cache on connection setup
+	auto_init_explorer = false,
+
 	-- Automatically re-establish the connection when a buffer is renamed (e.g. :saveas)
 	auto_connect_on_rename = true,
 

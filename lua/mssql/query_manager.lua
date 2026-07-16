@@ -464,7 +464,7 @@ end
 ---@param result MssqlConnectionChangedResult
 function MssqlQueryManager:connectionchanged_async(result)
 	if self:update_connection_params(result) then
-		self:initialise_cache_async()
+		self:initialise_cache_async({ is_background = true })
 	end
 end
 
@@ -487,7 +487,7 @@ function MssqlQueryManager:initialise_cache_async(opts)
 	return explorer.initialise_cache_async(
 		self.client,
 		self.last_connect_params.connection.options,
-		{ scope = scope, force = force }
+		{ scope = scope, force = force, is_background = opts.is_background } --[[@as FindObjectOpts]]
 	)
 end
 
