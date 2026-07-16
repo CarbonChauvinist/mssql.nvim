@@ -82,6 +82,7 @@
 ---@field max_column_width integer? Max text length before truncation.
 ---@field query_timeout integer? Timeout in seconds (nil or < 0 for no timeout).
 ---@field object_explorer_timeouts { server: integer, database: integer }?
+---@field explorer_categories ("tables"|"views"|"stored_procedures"|"functions")[]? List of database object categories to scan in the explorer.
 ---@field auto_connect_on_rename boolean? Automatically re-establish the connection when a buffer is renamed (default true).
 ---@field execute_generated_select_statements boolean? Auto-execute SELECTs from finder.
 ---@field lsp_settings table? Settings passed to mssql language server.
@@ -105,6 +106,7 @@
 ---@field max_column_width integer
 ---@field query_timeout integer?
 ---@field object_explorer_timeouts { server: integer, database: integer }
+---@field explorer_categories ("tables"|"views"|"stored_procedures"|"functions")[]
 ---@field auto_connect_on_rename boolean
 ---@field execute_generated_select_statements boolean
 ---@field lsp_settings table

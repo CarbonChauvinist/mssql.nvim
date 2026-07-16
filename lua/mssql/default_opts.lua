@@ -40,6 +40,15 @@ local M = {
 		database = 90
 	},
 
+	--[[ List of database object categories to scan in explorer.
+  Valid options are:
+  "stored_procedures"
+  "tables"
+  "views"
+  "functions"
+	--]]
+	explorer_categories = { "stored_procedures" },
+
 	-- Automatically re-establish the connection when a buffer is renamed (e.g. :saveas)
 	auto_connect_on_rename = true,
 

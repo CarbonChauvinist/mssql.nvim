@@ -12,7 +12,18 @@ local global_cache = {}
 ---@type table<string, function>
 local active_sessions = {}
 
-local OBJECT_TYPE_MAP = M.OBJECT_TYPE_MAP
+-- internal mapping groups all variations of node.objectType and node.label
+local category_mappings = {
+	tables = { "Tables", "Table" },
+	views = { "Views", "View" },
+	stored_procedures = { "StoredProcedures", "StoredProcedure", "Stored Procedures" },
+	functions = {
+		"Functions", "Function",
+		"TableValuedFunctions", "TableValuedFunction", "Table-valued Functions",
+		"ScalarValuedFunctions", "ScalarValuedFunction", "Scalar-valued Functions",
+		"AggregateFunctions", "AggregateFunction", "Aggregate Functions"
+	},
+}
 
 ---@param err lsp.ResponseError?
 ---@param result { sessionId: string }?
@@ -140,6 +151,22 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 	opts = opts or {}
 	local scope = utils.normalize_findobject_scope(opts.scope)
 	local timeout_ms = opts.timeout_ms or 10000
+
+	local allowed_folders = {}
+	-- ALWAYS allow stored procedures and functions
+	allowed_folders["Programmability"] = true
+
+	local config = state.get_config() or {}
+	local user_categories = config.explorer_categories or { "stored_procedures" }
+
+	for _, category in ipairs(user_categories) do
+		local names = category_mappings[category]
+		if names then
+			for _, name in ipairs(names) do
+				allowed_folders[name] = true
+			end
+		end
+	end
 
 	local db_allow_list = connection_options and connection_options.databaseAllowList
 	local db_deny_list = connection_options and connection_options.databaseDenyList
@@ -302,19 +329,10 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 			elseif node.nodePath then
 				local should_expand = false
 				local is_db = (node.objectType == "Database")
-				local is_db_structure = (
-				  node.objectType == "Tables"
-				  or node.objectType == "Views"
-				  or node.objectType == "StoredProcedures"
-				  or node.objectType == "Functions"
-				)
 				local is_nav_folder = (node.label == "Databases" or node.label == "System Databases")
 
 				if is_nav_folder then
 					-- always traverse structure folders
-					should_expand = true
-
-				elseif is_db_structure and scope == "database" then
 					should_expand = true
 
 				elseif is_db then
@@ -336,27 +354,6 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 					-- these are child folders (e.g. "Tables", "Views") inside a Database
 					-- if we're here, we are either in Server scope (expand everything we find)
 					-- OR in DB scope and strictly inside the 'found' DB
-					local allowed_folders = {
-						Tables = true,
-						Table = true,
-						Views = true,
-						View = true,
-						Programmability = true,
-						StoredProcedures = true,
-						StoredProcedure = true,
-						Functions = true,
-						Function = true,
-						TableValuedFunctions = true,
-						TableValuedFunction = true,
-						ScalarValuedFunctions = true,
-						ScalarValuedFunction = true,
-						AggregateFunctions = true,
-						AggregateFunction = true,
-						["Stored Procedures"] = true,
-						["Table-valued Functions"] = true,
-						["Scalar-valued Functions"] = true,
-						["Aggregate Functions"] = true,
-					}
 					if allowed_folders[node.objectType] or allowed_folders[node.label] then
 						should_expand = true
 					end
