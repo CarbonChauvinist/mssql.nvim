@@ -83,6 +83,7 @@
 ---@field query_timeout integer? Timeout in seconds (nil or < 0 for no timeout).
 ---@field object_explorer_timeouts { server: integer, database: integer }?
 ---@field explorer_categories ("tables"|"views"|"stored_procedures"|"functions")[]? List of database object categories to scan in the explorer.
+---@field auto_init_explorer boolean? Automatically populate the object cache on connection (default false).
 ---@field auto_connect_on_rename boolean? Automatically re-establish the connection when a buffer is renamed (default true).
 ---@field execute_generated_select_statements boolean? Auto-execute SELECTs from finder.
 ---@field lsp_settings table? Settings passed to mssql language server.
@@ -107,6 +108,7 @@
 ---@field query_timeout integer?
 ---@field object_explorer_timeouts { server: integer, database: integer }
 ---@field explorer_categories ("tables"|"views"|"stored_procedures"|"functions")[]
+---@field auto_init_explorer boolean
 ---@field auto_connect_on_rename boolean
 ---@field execute_generated_select_statements boolean
 ---@field lsp_settings table
@@ -273,6 +275,7 @@
 ---@field owner_uri? string Optional owner URI to execute script request context
 ---@field force? boolean Optional Get a new cache and overwrite
 ---@field connect_params? MssqlConnectParams Optional connection parameters
+---@field is_background? boolean True if this is an automatic background initialization
 
 ---@class MssqlModule
 ---@field setup fun(opts?: MssqlConfig) Setup the plugin

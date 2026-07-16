@@ -481,6 +481,11 @@ M.initialise_cache_async = function(lsp_client, conn_opts, opts)
 	local force = opts.force or false
 
 	local config = state.get_config()
+
+	if opts.is_background and config and config.auto_init_explorer == false then
+		return true
+	end
+
 	local timeouts = config and config.object_explorer_timeouts
 	local timeout_sec = (timeouts and timeouts[scope]) or ((scope == "server") and 180 or 90)
 	local timeout_ms = timeout_sec * 1000
