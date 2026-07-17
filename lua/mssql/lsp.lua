@@ -163,7 +163,7 @@ local customized_handlers = {
 	["connection/connectionchanged"] = make_handler("connection/connectionchanged", function(_, result, _)
 		if utils.is_empty(result) or utils.is_empty(result.ownerUri) then return end
 		local bufnr = vim.iter(vim.api.nvim_list_bufs()):find(function(buf)
-			return utils.lsp_file_uri(buf) == result.ownerUri
+			return vim.uri_from_bufnr(buf) == result.ownerUri
 		end)
 
 		if not bufnr then return end

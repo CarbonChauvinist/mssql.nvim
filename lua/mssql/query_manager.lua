@@ -131,7 +131,7 @@ end
 --- Dynamically calculate the URI every time
 ---@return string
 function MssqlQueryManager:get_owner_uri()
-	return utils.lsp_file_uri(self.bufnr) or ""
+	return vim.uri_from_bufnr(self.bufnr) or ""
 end
 
 ---@return string? database_name Returns nil if not connected

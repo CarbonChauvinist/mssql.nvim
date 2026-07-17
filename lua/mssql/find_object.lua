@@ -173,7 +173,7 @@ local generate_script_async = function(item, client, opts)
 			typeOfDataToScript = "SchemaOnly",
 			scriptStatistics = "ScriptStatsNone",
 		},
-		ownerURI = owner_uri or utils.lsp_file_uri(0),
+		ownerURI = owner_uri or vim.uri_from_bufnr(vim.api.nvim_get_current_buf()),
 		operation = action_def.op,
 	}
 

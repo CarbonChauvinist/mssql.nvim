@@ -23,7 +23,7 @@ return {
 		vim.api.nvim_buf_set_name(switched_buf, vim.fs.joinpath(vim.loop.cwd(), "switched_query.sql"))
 		vim.api.nvim_set_option_value("filetype", "sql", { buf = switched_buf })
 
-		local orig_uri = utils.lsp_file_uri(orig_buf)
+		local orig_uri = vim.uri_from_bufnr(orig_buf)
 
 		local captured_script_params = nil
 

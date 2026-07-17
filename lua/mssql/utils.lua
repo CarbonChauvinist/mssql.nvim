@@ -97,30 +97,15 @@ M.try_resume = function(co, ...)
 	return result
 end
 
---- The LSP wants the file path to be absolute and start with file:///,
---- But it doesn't want special characters like spaces to be escaped.
-M.lsp_file_uri = function(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	if not vim.api.nvim_buf_is_valid(bufnr) then
-		return nil
-	end
-	local path = vim.api.nvim_buf_get_name(bufnr)
-	path = vim.fs.normalize(path)
-	path = vim.fs.abspath(path)
-	if vim.uv.os_uname().sysname == "Windows_NT" then
-		path = "/" .. path
-	end
-	return "file://" .. path
-end
-
 ---Converts an LSP ownerUri string back to a buffer number
----@param owner_uri string
+---allows performance benefits of native lookup without creating new
+---buffer for closed files like `vim.uri_to_bufnr`
+---@param uri string
 ---@return integer? bufnr
-M.get_bufnr_from_uri = function(owner_uri)
-	if not owner_uri then return nil end
-	return vim.iter(vim.api.nvim_list_bufs()):find(function(buf)
-		return M.lsp_file_uri(buf) == owner_uri
-	end)
+M.get_bufnr_from_uri = function(uri)
+	if not uri then return nil end
+	local bufnr = vim.fn.bufnr(vim.uri_to_fname(uri))
+	return bufnr ~= -1 and bufnr or nil
 end
 
 M.get_lsp_client = function(owner_uri)

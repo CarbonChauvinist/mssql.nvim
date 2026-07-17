@@ -191,7 +191,7 @@ M.refresh_intellisense = function(bufnr)
 	local success, msg = pcall(function()
 		local client = qm:get_lsp_client()
 		---@diagnostic disable-next-line: param-type-mismatch
-		client:notify("textDocument/rebuildIntelliSense", { ownerUri = utils.lsp_file_uri() })
+		client:notify("textDocument/rebuildIntelliSense", { ownerUri = vim.uri_from_bufnr(bufnr) })
 	end)
 	if not success then utils.log_error(msg)
 	else
