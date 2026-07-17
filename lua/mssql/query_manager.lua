@@ -464,7 +464,7 @@ end
 ---@param result MssqlConnectionChangedResult
 function MssqlQueryManager:connectionchanged_async(result)
 	if self:update_connection_params(result) then
-		self:initialise_cache_async({ is_background = true })
+		self:initialise_explorer_cache_async({ is_background = true })
 	end
 end
 
@@ -473,7 +473,7 @@ end
 --- Initialize cache for finder
 ---@param opts? FindObjectOpts
 ---@return boolean success
-function MssqlQueryManager:initialise_cache_async(opts)
+function MssqlQueryManager:initialise_explorer_cache_async(opts)
 	opts = opts or {}
 	local scope = utils.normalize_findobject_scope(opts.scope)
 	local force = opts.force or false
@@ -484,7 +484,7 @@ function MssqlQueryManager:initialise_cache_async(opts)
 		return false
 	end
 
-	return explorer.initialise_cache_async(
+	return explorer.initialise_explorer_cache_async(
 		self.client,
 		self.last_connect_params.connection.options,
 		{ scope = scope, force = force, is_background = opts.is_background } --[[@as FindObjectOpts]]

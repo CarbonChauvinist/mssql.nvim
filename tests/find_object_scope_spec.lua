@@ -49,7 +49,7 @@ return {
 		state._reset_all_state()
 		captured_create_params = {}
 
-		explorer.initialise_cache_async(mock_client, conn_opts, { scope = "database", force = true })
+		explorer.initialise_explorer_cache_async(mock_client, conn_opts, { scope = "database", force = true })
 		test_utils.poll(function()
 			return #captured_create_params > 0
 		end, {timeout_ms = 1000})
@@ -80,7 +80,7 @@ return {
 		state._reset_all_state()
 		captured_create_params = {}
 
-		explorer.initialise_cache_async(mock_client, conn_opts, { scope = "server", force = true })
+		explorer.initialise_explorer_cache_async(mock_client, conn_opts, { scope = "server", force = true })
 		test_utils.poll(function()
 			return #captured_create_params > 0
 		end, {timeout_ms = 1000})

@@ -109,7 +109,7 @@ return {
       },
     } --[[@as MssqlConnectionOptions]]
 
-    explorer.initialise_cache_async(mock_client, conn_opts, { scope = "database", force = true })
+    explorer.initialise_explorer_cache_async(mock_client, conn_opts, { scope = "database", force = true })
 
     -- ASSERTIONS
     -- 1. Tables

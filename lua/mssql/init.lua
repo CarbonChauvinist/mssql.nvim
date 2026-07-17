@@ -122,7 +122,7 @@ M.switch_database = utils.async(function(bufnr, callback)
 	end
 
 	cmds.switch_database_async(bufnr)
-	qm:initialise_cache_async({ is_background = true })
+	qm:initialise_explorer_cache_async({ is_background = true })
 	autocmds.clean_cache()
 	if callback then callback() end
 end)
@@ -162,7 +162,7 @@ M.connect = utils.async(function(bufnr)
 	end
 
 	if cmds.perform_connect_async(curr_conf, qm, bufnr) then
-		qm:initialise_cache_async( { is_background = true })
+		qm:initialise_explorer_cache_async( { is_background = true })
 	end
 	autocmds.clean_cache()
 end)
@@ -173,11 +173,11 @@ M.edit_connections = function()
 	utils.edit_connections(curr_conn)
 end
 
---- Rebuilds the sql object and intellisense cache
+--- Rebuilds the server-side Intellisense autocomplete cache
 ---@overload fun()
 ---@overload fun(bufnr: integer)
 ---@param bufnr? integer
-M.refresh_cache = function(bufnr)
+M.refresh_intellisense = function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 	local qm = state.get_query_manager(bufnr)
 	if not qm then
@@ -185,27 +185,46 @@ M.refresh_cache = function(bufnr)
 		return
 	end
 	if qm:get_state() ~= qm.states.connected then
-		utils.log_error("You are currently " .. qm:get_state())
+		utils.log_error("To refresh intellisense you must be connected. You are currently " .. qm:get_state())
 		return
 	end
-	-- refresh the object cache, fire and forget
-	ui.set_caching_status(true)
-	vim.cmd("redrawstatus")
-
-	coroutine.resume(coroutine.create(function()
-		qm:initialise_cache_async({ force = true, auto_init = true })
-		ui.set_caching_status(false)
-		vim.cmd("redrawstatus")
-	end))
-
-	-- refresh the intellisense cache, fire and forget
 	local success, msg = pcall(function()
 		local client = qm:get_lsp_client()
 		---@diagnostic disable-next-line: param-type-mismatch
 		client:notify("textDocument/rebuildIntelliSense", { ownerUri = utils.lsp_file_uri() })
 	end)
-	if not success then utils.log_error(msg) end
-	utils.log_info("Refreshing cache...")
+	if not success then utils.log_error(msg)
+	else
+		utils.log_info("Refreshing IntelliSense cache...")
+	end
+end
+
+--- Rebuilds the client-side Object Explorer search cache
+---@overload fun()
+---@overload fun(bufnr: integer)
+---@param bufnr? integer
+M.refresh_explorer_cache = function(bufnr)
+	bufnr = bufnr or vim.api.nvim_get_current_buf()
+	local qm = state.get_query_manager(bufnr)
+	if not qm then
+		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
+		return
+	end
+	if qm:get_state() ~= qm.states.connected then
+		utils.log_error("To refresh Object Explorer you must be connected. You are currently: " .. qm:get_state())
+		return
+	end
+	ui.set_caching_status(true)
+	vim.cmd("redrawstatus")
+	utils.log_info("Refreshing Object Explorer cache...")
+	coroutine.resume(coroutine.create(function()
+		local success = qm:initialise_explorer_cache_async({ force = true, is_background = false })
+		ui.set_caching_status(false)
+		vim.cmd("redrawstatus")
+		if success then
+			utils.log_info("Object Explorer cache refreshed")
+		end
+	end))
 end
 
 ---@overload fun()
@@ -358,7 +377,7 @@ M.find_object = utils.async(function(opts)
 	ui.set_caching_status(true)
 	vim.cmd("redrawstatus")
 
-	local success = qm:initialise_cache_async({ scope = scope, is_background = false })
+	local success = qm:initialise_explorer_cache_async({ scope = scope, is_background = false })
 
 	ui.set_caching_status(false)
 	vim.cmd("redrawstatus")

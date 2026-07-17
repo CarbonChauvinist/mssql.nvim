@@ -51,7 +51,7 @@ return {
 			database = "tempdb"
 		} --[[@as MssqlConnectionOptions]]
 
-		local success = explorer.initialise_cache_async(mock_client, conn_opts, { force = true })
+		local success = explorer.initialise_explorer_cache_async(mock_client, conn_opts, { force = true })
 		if state._reset_all_state then state._reset_all_state() end
 		assert(success == false, "Function should have returned false (failed) due to timeout.")
 

@@ -227,7 +227,7 @@
 ---@field last_execution fun(self: MssqlQueryManager): MssqlExecutionInfo
 ---@field update_connection_params fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult): boolean
 ---@field connectionchanged_async fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult)
----@field initialise_cache_async fun(self: MssqlQueryManager, opts?: FindObjectOpts): boolean
+---@field initialise_explorer_cache_async fun(self: MssqlQueryManager, opts?: FindObjectOpts): boolean
 ---@field find_async fun(self: MssqlQueryManager, scope: string?, object_type: string?): {script: string, select: boolean }?
 ---@field is_refreshing fun(self: MssqlQueryManager): boolean?
 ---@field handle_query_complete fun(self: MssqlQueryManager, result: MssqlQueryExecuteSubsetResult)
@@ -283,7 +283,9 @@
 ---@field disconnect fun() Disconnect the current session
 ---@field execute_query fun() Execute the query under the cursor or selection
 ---@field find_object fun(opts?: FindObjectOpts) Find objects (tables, views, etc.)
----@field refresh_cache fun() Refresh the the Intellisense cache
+---@field refresh_cache fun() Refresh both the IntelliSense and Object Explorer caches
+---@field refresh_intellisense fun() Refresh only the Intellisense cache
+---@field refresh_explorer_cache fun() Refresh only the Object Explorer cache
 ---@field edit_connections fun() Edit the connections.json file
 ---@field switch_database fun() Switch to a different database
 ---@field new_query fun() Open a query window

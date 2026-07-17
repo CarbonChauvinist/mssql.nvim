@@ -475,7 +475,7 @@ M.OBJECT_TYPE_MAP = {
 ---@param conn_opts MssqlConnectionOptions
 ---@param opts? FindObjectOpts
 ---@return boolean success
-M.initialise_cache_async = function(lsp_client, conn_opts, opts)
+M.initialise_explorer_cache_async = function(lsp_client, conn_opts, opts)
 	opts = opts or {}
 	local scope = utils.normalize_findobject_scope(opts.scope)
 	local force = opts.force or false

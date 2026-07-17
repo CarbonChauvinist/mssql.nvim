@@ -66,7 +66,7 @@ return {
 		local conn_opts = { server = "MyServer", database = "master", user = "sa" } --[[@as MssqlConnectionOptions]]
 
 		-- test init
-		local success = explorer.initialise_cache_async(mock_client, conn_opts, { scope = "server", force = true })
+		local success = explorer.initialise_explorer_cache_async(mock_client, conn_opts, { scope = "server", force = true })
 		assert(success, "Explorer cache failed to initialize")
 
 		-- test cache contents
