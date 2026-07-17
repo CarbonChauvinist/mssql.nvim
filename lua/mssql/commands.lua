@@ -39,7 +39,7 @@ M.new_default_query_async = function(opts)
 	else
 		utils.log_info("Connected")
 	end
-	query_manager:initialise_cache_async()
+	query_manager:initialise_explorer_cache_async({ is_background = true })
 end
 
 ---@param query_manager MssqlQueryManager

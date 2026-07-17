@@ -9,7 +9,7 @@ return {
     local buf, _client, qm, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
 
     assert(qm:get_state() == qm.states.connected, "Should be connected initially")
-    qm:initialise_cache_async("database", true)
+    qm:initialise_explorer_cache_async({ scope = "database", force = true })
 
     local tempdb_cached = test_utils.poll(function()
       local cache = explorer.get_cache()
@@ -44,20 +44,13 @@ return {
 
     test_utils.ui_select_fake("TestConnectionB")
     mssql.connect(buf)
-    -- test_utils.wait_for_connected(buf)
-    -- test_utils.wait_for_intellisenseReady(buf, client)
-    -- qm = mssql.get_query_manager(buf)
-    -- assert(qm, "Query manager not present")
 
-    -- local current_db = qm:get_database_name()
-    -- assert(current_db == "TestDB", "Database name did not update to TestDbB. Current: " .. tostring(current_db))
     local switch_success = test_utils.poll(function()
       return qm:get_database_name() == "TestDbB" and qm:get_state() == qm.states.connected
     end, { timeout_ms = 10000 })
     assert(switch_success, "Failed to switch database connection to TestConnectionB")
     local current_db = qm:get_database_name()
     assert(qm:get_state() == qm.states.connected, "Query Manager should be connected to the new database")
-    -- qm:initialise_cache_async("database", true)
 
     -- verify old cache was cleaned
     local tempdb_cleared = test_utils.poll(function()

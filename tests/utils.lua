@@ -515,7 +515,7 @@ M.test_scaffold = function(opts)
 	if not qm then
 		error("Query manager not found on buffer.")
 	end
-	qm:initialise_cache_async({ scope = "database", force = true })
+	qm:initialise_explorer_cache_async({ scope = "database", force = true })
 
 	-- Fix for test suite/harness operability
 	-- Uncleared Coroutine Reference in test suite: Once get_object_cache_async finishes, the refresh_coroutine reference is not cleared.

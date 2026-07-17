@@ -87,7 +87,7 @@ return {
 			databaseDenyList = { "Denied.*" }
 		} --[[@as MssqlConnectionOptions]]
 
-		explorer.initialise_cache_async(mock_client, conn_opts, { scope = "server", force = true })
+		explorer.initialise_explorer_cache_async(mock_client, conn_opts, { scope = "server", force = true })
 
 		-- test 1: allowed db
 		local found = test_utils.wait_for_cache_content("TableInAllowedDb", {debug = true, timeout = 10000 })

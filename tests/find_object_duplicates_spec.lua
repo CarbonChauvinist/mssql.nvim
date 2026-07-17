@@ -50,7 +50,7 @@ return {
 
 		local conn_opts = { server = "S", database = "D" } --[[@as MssqlConnectionOptions]]
 
-		local success1 = explorer.initialise_cache_async(mock_client, conn_opts, {scope = "database", force = true })
+		local success1 = explorer.initialise_explorer_cache_async(mock_client, conn_opts, {scope = "database", force = true })
 		assert(success1, "First refresh should succeed")
 
 		local found1 = test_utils.wait_for_cache_content("Table1", {
@@ -72,7 +72,7 @@ return {
 
 		-- run 2 if duplicate listeners bug exists this will cause two listeners
 		-- to fire on the single event, pushing "Table1" into the cache twice
-		local success2 = explorer.initialise_cache_async(mock_client, conn_opts, {scope = "database", force = true })
+		local success2 = explorer.initialise_explorer_cache_async(mock_client, conn_opts, {scope = "database", force = true })
 		assert(success2, "Second refresh command started successfully")
 
 		local found2 = test_utils.wait_for_cache_content("Table1", {

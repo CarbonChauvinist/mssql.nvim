@@ -8,7 +8,7 @@ return {
 		-- disconnect test
 		do
 			local buf, _, qm, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
-			qm:initialise_cache_async({force = true})
+			qm:initialise_explorer_cache_async({ force = true })
 
 			local dc_conn_opts = qm and qm:get_connection_options()
 			local dc_cache_key = explorer.create_cache_key(dc_conn_opts, "database")
@@ -35,7 +35,7 @@ return {
 		-- buffer delete test
 		do
 			local _, _, qm, cleanup = test_utils.test_scaffold({ target_db = "TestDbB" })
-			qm:initialise_cache_async({ force = true })
+			qm:initialise_explorer_cache_async({ force = true })
 
 			local del_conn_opts = qm and qm:get_connection_options()
 			local del_conn_key = explorer.create_cache_key(del_conn_opts, "database")
