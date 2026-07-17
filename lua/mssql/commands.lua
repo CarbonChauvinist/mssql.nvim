@@ -193,7 +193,7 @@ M.switch_database_async = function(bufnr)
 	end
 
 	local client = qm:get_lsp_client()
-	local result, err = utils.lsp_request_async(client, "connection/listdatabases", { ownerUri = utils.lsp_file_uri(bufnr) })
+	local result, err = utils.lsp_request_async(client, "connection/listdatabases", { ownerUri = vim.uri_from_bufnr(bufnr) })
 
 	if err then
 		error("Error listing databases: " .. err.message, 0)
