@@ -227,8 +227,11 @@ M.lualine_component = {
 			table.insert(status_parts, server_db_string)
 		end
 
-		if show_caching_in_status_line and qm:is_refreshing() then
-			table.insert(status_parts, "(Caching database objects...)")
+		local client = qm:get_lsp_client()
+		if client and not state.is_intellisense_ready(client.id) then
+			table.insert(status_parts, "Updating IntelliSense...")
+		elseif show_caching_in_status_line and qm:is_refreshing() then
+			table.insert(status_parts, "Caching database objects...")
 		end
 
 		return table.concat(status_parts, "  ")

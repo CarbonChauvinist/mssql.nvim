@@ -272,7 +272,7 @@ M.wait_for_intellisenseReady = function(buf, client, opts)
 	local timeout_ms = opts.timeout_ms or 30000
 	timeout_ms = timeout_ms or 30000
 
-	if require("mssql.state").is_client_ready(client.id) then
+	if require("mssql.state").is_intellisense_ready(client.id) then
 		return true
 	end
 

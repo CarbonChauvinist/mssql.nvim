@@ -464,6 +464,7 @@ end
 ---@param result MssqlConnectionChangedResult
 function MssqlQueryManager:connectionchanged_async(result)
 	if self:update_connection_params(result) then
+		utils.log_info("Database changed. Updating IntelliSense...")
 		self:initialise_explorer_cache_async({ is_background = true })
 	end
 end

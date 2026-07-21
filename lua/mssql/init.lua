@@ -184,15 +184,23 @@ M.refresh_intellisense = function(bufnr)
 		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
 		return
 	end
+	local client = qm:get_lsp_client()
+
 	if qm:get_state() ~= qm.states.connected then
 		utils.log_error("To refresh intellisense you must be connected. You are currently " .. qm:get_state())
 		return
 	end
+
+	if client then
+		state.set_intellisense_ready(client.id, false)
+		vim.cmd("redrawstatus")
+	end
+
 	local success, msg = pcall(function()
-		local client = qm:get_lsp_client()
 		---@diagnostic disable-next-line: param-type-mismatch
 		client:notify("textDocument/rebuildIntelliSense", { ownerUri = vim.uri_from_bufnr(bufnr) })
 	end)
+
 	if not success then utils.log_error(msg)
 	else
 		utils.log_info("Refreshing IntelliSense cache...")
