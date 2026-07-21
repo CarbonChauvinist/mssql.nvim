@@ -7,7 +7,7 @@ return {
 		local buf, client, _, cleanup = test_utils.test_scaffold({ target_db = "tempdb" })
 		state._reset_all_state({ force_all = true })
 
-		local is_ready = state.is_client_ready(client.id)
+		local is_ready = state.is_intellisense_ready(client.id)
 		assert(is_ready == nil or is_ready == false, "Client should not be ready immediately after state reset")
 
 		local handler = client.handlers["textDocument/intelliSenseReady"]
@@ -18,7 +18,7 @@ return {
 		handler(nil, { result = "success" }, fake_ctx)
 
 		-- prove handler successfully called state.set_client_ready(id)
-		assert(state.is_client_ready(client.id) == true, "Client should be marked ready after handler executes")
+		assert(state.is_intellisense_ready(client.id) == true, "Client should be marked ready after handler executes")
 
 		cleanup()
 	end,

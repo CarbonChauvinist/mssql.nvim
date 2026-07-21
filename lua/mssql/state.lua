@@ -3,7 +3,7 @@ local default_opts = require("mssql.default_opts")
 local M = {}
 
 ---@type table<integer, boolean>
-local ready_clients = {}
+local intellisense_ready_clients = {}
 
 -- Store the latest configuration here so closures always see the current version
 ---@type MssqlOptions
@@ -28,14 +28,16 @@ local last_query_range = nil
 local last_query_extmarks = nil
 
 ---@param client_id integer
-M.set_client_ready = function(client_id)
-	ready_clients[client_id] = true
+---@param is_ready? boolean Default true
+M.set_intellisense_ready = function(client_id, is_ready)
+	if is_ready == nil then is_ready = true end
+	intellisense_ready_clients[client_id] = is_ready
 end
 
 ---@param client_id integer
 ---@return boolean success
-M.is_client_ready = function(client_id)
-	return ready_clients[client_id] == true
+M.is_intellisense_ready = function(client_id)
+	return intellisense_ready_clients[client_id] == true
 end
 
 ---@return MssqlOptions?
@@ -256,16 +258,16 @@ M._reset_all_state = function(opts)
 	scripting_uris = {}
 
 	if force_all then
-		ready_clients = {}
+		intellisense_ready_clients = {}
 	else
 		-- Retain ready status for active clients to prevent out-of-sync timeouts
 		local active_ids = {}
 		for _, client in ipairs(vim.lsp.get_clients({ name = "mssql_ls" })) do
 			active_ids[client.id] = true
 		end
-		for id, _ in pairs(ready_clients) do
+		for id, _ in pairs(intellisense_ready_clients) do
 			if not active_ids[id] then
-				ready_clients[id] = nil
+				intellisense_ready_clients[id] = nil
 			end
 		end
 	end

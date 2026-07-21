@@ -105,7 +105,8 @@ local customized_handlers = {
 		end
 
 		if ctx and ctx.client_id then
-			require("mssql.state").set_client_ready(ctx.client_id)
+			require("mssql.state").set_intellisense_ready(ctx.client_id, true)
+			vim.cmd("redrawstatus")
 		end
 
 		return result, err
