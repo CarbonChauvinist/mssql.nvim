@@ -33,9 +33,7 @@ M.setup = function(opts)
 		callback = function(args)
 			local buf = args.buf
 			if vim.b[buf].is_temp_name then
-				local written_name = vim.fn.fnamemodify(vim.fn.expand("<afile>"), ":t")
-
-				vim.cmd("file " .. written_name)
+				vim.cmd("file " .. vim.fn.expand("<afile>:p"))
 				vim.b[buf].is_temp_name = nil
 			end
 		end,
