@@ -272,7 +272,8 @@ M.wait_for_intellisenseReady = function(buf, client, opts)
 	local timeout_ms = opts.timeout_ms or 30000
 	timeout_ms = timeout_ms or 30000
 
-	if require("mssql.state").is_intellisense_ready(client.id) then
+	local qm = require("mssql.state").get_query_manager(buf)
+	if qm and qm:is_intellisense_ready() then
 		return true
 	end
 

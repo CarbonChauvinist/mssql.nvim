@@ -104,10 +104,9 @@ local customized_handlers = {
 			end
 		end
 
-		if ctx and ctx.client_id then
-			require("mssql.state").set_intellisense_ready(ctx.client_id, true)
-			vim.cmd("redrawstatus")
-		end
+		local bufnr = get_bufnr(result, ctx)
+		local qm = state.get_query_manager(bufnr)
+		if qm then qm:set_intellisense_ready(true) end
 
 		return result, err
 	end),

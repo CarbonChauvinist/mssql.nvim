@@ -39,6 +39,7 @@ function MssqlQueryManager.new(bufnr, client, opts)
 	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
 	self.start_time = 0
 	self.query_timeout = opts.query_timeout
+	self.intellisense_ready = false
 
 	local attached = vim.api.nvim_buf_attach(bufnr, false, {
 		on_detach = function()
@@ -126,6 +127,18 @@ local function is_valid_connection_changed_result(result)
 		and type(result) == "table"
 		and type(result.ownerUri) == "string"
 		and type(result.connection) == "table"
+end
+
+---@param is_ready? boolean Default true
+function MssqlQueryManager:set_intellisense_ready(is_ready)
+	if is_ready == nil then is_ready = true end
+	self.intellisense_ready = is_ready
+	vim.cmd("redrawstatus")
+end
+
+---@return boolean
+function MssqlQueryManager:is_intellisense_ready()
+	return self.intellisense_ready
 end
 
 --- Dynamically calculate the URI every time
@@ -242,6 +255,7 @@ function MssqlQueryManager:connect_async(connect_params)
 	local result, wait_err = utils.wait_for_notification_async(
 		self.bufnr, self.client, "connection/complete", timeout_ms
 	)
+	self:set_intellisense_ready(false)
 
 	if wait_err or (not utils.is_empty(result) and not utils.is_empty(result.errorMessage)) then
 		self:set_state(MssqlQueryManager.states.disconnected)

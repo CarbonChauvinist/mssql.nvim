@@ -206,6 +206,8 @@
 ---@field last_execution_info MssqlExecutionInfo
 ---@field start_time number
 ---@field query_timeout number?
+---@field set_intellisense_ready fun(self: MssqlQueryManager, is_ready: boolean)
+---@field is_intellisense_ready fun(self: MssqlQueryManager): boolean
 ---@field get_owner_uri fun(self: MssqlQueryManager): string
 ---@field get_database_name fun(self: MssqlQueryManager): string?
 ---@field set_state fun(self: MssqlQueryManager, new_state: MssqlQueryManagerState): boolean
