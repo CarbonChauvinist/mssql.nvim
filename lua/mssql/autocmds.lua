@@ -35,6 +35,15 @@ M.setup = function(opts)
 			if vim.b[buf].is_temp_name then
 				vim.cmd("file " .. vim.fn.expand("<afile>:p"))
 				vim.b[buf].is_temp_name = nil
+
+				local qm = state.get_query_manager(buf)
+				local current_conf = state.get_config()
+				if qm and qm:get_state() == qm.states.connected and current_conf and current_conf.auto_connect_on_rename then
+					local success, err = utils.reconnect_session(qm, "Buffer renamed")
+					if not success then
+						utils.log_error(err)
+					end
+				end
 			end
 		end,
 	})
@@ -72,24 +81,6 @@ M.setup = function(opts)
 		end,
 	})
 
-	-- auto-reconnect on rename (:saveas)
-	vim.api.nvim_create_autocmd("BufFilePost", {
-		group = "AutoNameSQL",
-		pattern = "*.sql",
-		callback = function(args)
-			local buf = args.buf
-			local qm = state.get_query_manager(buf)
-
-			local current_conf = state.get_config()
-
-			if qm and qm:get_state() == qm.states.connected and current_conf and current_conf.auto_connect_on_rename and not vim.b[buf].skip_auto_connect then
-				local success, err = utils.reconnect_session(qm, "Buffer renamed")
-				if not success then
-					utils.log_error(err)
-				end
-			end
-		end
-	})
 end
 
 return M

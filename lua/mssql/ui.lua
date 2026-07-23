@@ -51,11 +51,10 @@ M.insert_query_into_buffer = function(query, label)
 	if vim.trim(table.concat(vim.api.nvim_buf_get_lines(source_buf, 0, -1, false))) == "" then
 		vim.api.nvim_buf_set_lines(source_buf, 0, 0, false, vim.split(query, "\n"))
 		if label and (vim.b[source_buf].is_temp_name or vim.api.nvim_buf_get_name(source_buf) == "") then
-			vim.b[source_buf].skip_auto_connect = true
 			vim.api.nvim_buf_set_name(source_buf, label .. ".sql")
 			vim.b[source_buf].is_temp_name = nil
-			vim.b[source_buf].skip_auto_connect = nil
 
+			-- if renaming an already-connected buffer, register the new URI with server
 			local source_qm = state.get_query_manager(source_buf)
 			if source_qm and source_qm:get_state() == source_qm.states.connected then
 				local conn_params = source_qm:get_connect_params()

@@ -403,9 +403,6 @@ M.find_object = utils.async(function(opts)
 
 	if curr_conf.execute_generated_select_statements and item.select then
 		ui.clear_message_buffer()
-		if qm:get_state() ~= qm.states.connected then
-			utils.wait_for_connected(target_buf)
-		end
 		local result, err = qm:execute_async(item.script)
 
 		if result then
