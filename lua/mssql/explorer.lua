@@ -25,6 +25,16 @@ local category_mappings = {
 	},
 }
 
+local type_to_category = {
+	Programmability = "programmability",
+}
+
+for category, types in pairs(category_mappings) do
+	for _, type_name in ipairs(types) do
+		type_to_category[type_name] = category
+	end
+end
+
 ---@param err lsp.ResponseError?
 ---@param result { sessionId: string }?
 ---@param ctx table
@@ -152,20 +162,14 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 	local scope = utils.normalize_findobject_scope(opts.scope)
 	local timeout_ms = opts.timeout_ms or 10000
 
-	local allowed_folders = {}
-	-- ALWAYS allow stored procedures and functions
-	allowed_folders["Programmability"] = true
-
 	local config = state.get_config() or {}
 	local user_categories = config.explorer_categories or { "stored_procedures" }
 
+	local active_categories = {
+		programmability = true, --always expand structural parent folders
+	}
 	for _, category in ipairs(user_categories) do
-		local names = category_mappings[category]
-		if names then
-			for _, name in ipairs(names) do
-				allowed_folders[name] = true
-			end
-		end
+		active_categories[category] = true
 	end
 
 	local db_allow_list = connection_options and connection_options.databaseAllowList
@@ -354,7 +358,8 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 					-- these are child folders (e.g. "Tables", "Views") inside a Database
 					-- if we're here, we are either in Server scope (expand everything we find)
 					-- OR in DB scope and strictly inside the 'found' DB
-					if allowed_folders[node.objectType] or allowed_folders[node.label] then
+					local category = type_to_category[node.objectType] or type_to_category[node.label]
+					if category and active_categories[category] then
 						should_expand = true
 					end
 				end
