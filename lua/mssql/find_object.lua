@@ -106,7 +106,7 @@ end
 ---@param item MssqlNode
 ---@param client vim.lsp.Client
 ---@param opts? { action_def?: MssqlResolvedAction, owner_uri?: string, connect_params?: MssqlConnectParams }
----@return { script: string, select: boolean }
+---@return { script: string, select: boolean, label: string }
 local generate_script_async = function(item, client, opts)
 	opts = opts or {}
 	local action_def = opts.action_def
@@ -209,6 +209,7 @@ local generate_script_async = function(item, client, opts)
 		-- strip carriage returns
 		script = script_content:gsub("\r", ""),
 		select = (scripting_params.operation == 0),
+		label = item.label or (item.metadata and item.metadata.name),
 	}
 end
 
@@ -233,7 +234,7 @@ end
 ---@param connection_options MssqlConnectionOptions
 ---@param lsp_client vim.lsp.Client
 ---@param opts? FindObjectOpts
----@return { script: string, select: boolean }?
+---@return { script: string, select: boolean, label: string }?
 M.find_async = function(connection_options, lsp_client, opts)
 	opts = opts or {}
 	local scope = utils.normalize_findobject_scope(opts.scope)

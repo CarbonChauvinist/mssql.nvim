@@ -411,6 +411,7 @@ M.create_sql_buffer = function(opts)
 	local name = opts.buffer_name or ("test-buffer-" .. buf .. ".sql")
 	local full_path = vim.fs.joinpath(vim.fn.getcwd(), name)
 	vim.api.nvim_buf_set_name(buf, full_path)
+	vim.b[buf].is_temp_name = true
 	vim.api.nvim_set_option_value("filetype", "sql", {buf = buf})
 	vim.api.nvim_win_set_buf(0, buf)
 

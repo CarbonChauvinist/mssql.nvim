@@ -392,10 +392,10 @@ M.find_object = utils.async(function(opts)
 
 	if not success then return end
 
-	local item = qm:find_async(scope, object_type)
+	local item = qm:find_async({ scope = scope, object_type = object_type })
 	if not item then return end
 
-	local target_buf = ui.insert_query_into_buffer(item.script)
+	local target_buf = ui.insert_query_into_buffer(item.script, item.label)
 	if target_buf == 0 then target_buf = vim.api.nvim_get_current_buf() end
 
 	qm = state.get_query_manager(target_buf)
@@ -403,6 +403,9 @@ M.find_object = utils.async(function(opts)
 
 	if curr_conf.execute_generated_select_statements and item.select then
 		ui.clear_message_buffer()
+		if qm:get_state() ~= qm.states.connected then
+			utils.wait_for_connected(target_buf)
+		end
 		local result, err = qm:execute_async(item.script)
 
 		if result then

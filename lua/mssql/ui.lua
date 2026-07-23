@@ -17,18 +17,25 @@ M.set_caching_status = function(is_caching)
 end
 
 ---Creates a new query buffer and waits for LSP attachment (default 10s)
----@param timeout_ms? integer
+---@param opts? { timeout_ms?: integer, buf_name?: string }
 ---@return integer buf
 ---@return vim.lsp.Client? lsp
-M.new_query_async = function(timeout_ms)
-	timeout_ms = timeout_ms or 10000
+M.new_query_async = function(opts)
+	opts = opts or {}
+	local timeout_ms = opts.timeout_ms or 10000
+	local buf_name = opts.buf_name
+
 	-- The language server requires all files to have a file name.
 	-- Vscode names new files "untitled-1" etc so we'll do the same
 	vim.cmd("enew")
 	local buf = vim.api.nvim_get_current_buf()
-	vim.cmd("file untitled-" .. buf .. ".sql")
+	if buf_name and buf_name ~= "" then
+		vim.api.nvim_buf_set_name(buf, buf_name .. ".sql")
+	else
+		vim.api.nvim_buf_set_name(buf, "untitled-" .. buf .. ".sql")
+		vim.b[buf].is_temp_name = true
+	end
 	vim.cmd("setfiletype sql")
-	vim.b[buf].is_temp_name = true
 
 	local client = lsp.wait_for_attach(buf, timeout_ms)
 	return buf, client
@@ -36,12 +43,28 @@ end
 
 --- Inserts query text into current buffer or creates a new one
 ---@param query string
+---@param label? string
 ---@return integer bufnr on success
-M.insert_query_into_buffer = function(query)
+M.insert_query_into_buffer = function(query, label)
 	local source_buf = vim.api.nvim_get_current_buf()
 
 	if vim.trim(table.concat(vim.api.nvim_buf_get_lines(source_buf, 0, -1, false))) == "" then
 		vim.api.nvim_buf_set_lines(source_buf, 0, 0, false, vim.split(query, "\n"))
+		if label and (vim.b[source_buf].is_temp_name or vim.api.nvim_buf_get_name(source_buf) == "") then
+			vim.b[source_buf].skip_auto_connect = true
+			vim.api.nvim_buf_set_name(source_buf, label .. ".sql")
+			vim.b[source_buf].is_temp_name = nil
+			vim.b[source_buf].skip_auto_connect = nil
+
+			local source_qm = state.get_query_manager(source_buf)
+			if source_qm and source_qm:get_state() == source_qm.states.connected then
+				local conn_params = source_qm:get_connect_params()
+				if conn_params then
+					source_qm:connect_async(conn_params)
+				end
+			end
+		end
+
 		return source_buf
 	end
 
@@ -51,7 +74,8 @@ M.insert_query_into_buffer = function(query)
 	end
 	local source_conn_params = source_qm:get_connect_params()
 
-	local target_buf = M.new_query_async()
+	local target_buf = M.new_query_async({ buf_name = label })
+
 	local target_qm = state.get_query_manager(target_buf)
 	if target_qm and source_conn_params then
 		target_qm:connect_async(source_conn_params)

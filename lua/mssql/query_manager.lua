@@ -506,11 +506,12 @@ function MssqlQueryManager:initialise_explorer_cache_async(opts)
 	)
 end
 
----@param scope string? Optional ("server" | "database"). Defaults to database.
----@param object_type string? Optional filter char ('t', 'v', 'f', 'p')
----@return { script: string, select: boolean }?
-function MssqlQueryManager:find_async(scope, object_type)
-	scope = utils.normalize_findobject_scope(scope)
+---@param opts? FindObjectOpts
+---@return { script: string, select: boolean, label: string }?
+function MssqlQueryManager:find_async(opts)
+	opts = opts or {}
+	local scope = utils.normalize_findobject_scope(opts.scope)
+	local object_type = opts.object_type
 
 	local options = self:get_connection_options()
 	if not options then
