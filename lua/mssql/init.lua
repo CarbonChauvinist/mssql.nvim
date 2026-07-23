@@ -135,7 +135,7 @@ M.connect = utils.async(function(bufnr)
 	bufnr = bufnr or vim.api.nvim_get_current_buf()
 
 	if vim.api.nvim_buf_get_name(bufnr) == "" and vim.api.nvim_get_option_value("ft", {buf = bufnr}) == "sql" then
-		vim.cmd("file " .. "untitled-" .. bufnr .. ".sql")
+		vim.api.nvim_buf_set_name(bufnr, "untitled-" .. bufnr .. ".sql")
 		local clients = vim.lsp.get_clients({ bufnr = bufnr, name = "mssql_ls" })
 		for _, client in ipairs(clients) do
 			client:stop()

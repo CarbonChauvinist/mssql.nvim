@@ -33,7 +33,7 @@ M.setup = function(opts)
 		callback = function(args)
 			local buf = args.buf
 			if vim.b[buf].is_temp_name then
-				vim.cmd("file " .. vim.fn.expand("<afile>:p"))
+				vim.api.nvim_buf_set_name(buf, vim.fn.expand("<afile>:p"))
 				vim.b[buf].is_temp_name = nil
 
 				local qm = state.get_query_manager(buf)
