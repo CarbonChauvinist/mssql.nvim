@@ -24,6 +24,14 @@ local last_query_range = nil
 ---@type {start: integer, end_: integer, buf: integer, start_ns: string, end_ns: string}?
 local last_query_extmarks = nil
 
+---@param bufnr integer
+---@param method? string
+---@return string
+local create_waiting_cr_key = function(bufnr, method)
+	method = method or "" --allow nil methods so can be used to generate keys when clearing in-flight coroutines for arbitrary buffers
+	return string.format("%d|%s", bufnr, method:lower())
+end
+
 ---@return MssqlOptions?
 M.get_config = function()
 	return current_config
@@ -59,6 +67,14 @@ end
 M.remove_query_manager = function(bufnr)
 	if not bufnr then return end
 	query_managers[bufnr] = nil
+
+	-- purge all pending coroutine keys matching "bufnr|method"
+	local prefix = create_waiting_cr_key(bufnr)
+	for key in pairs(waiting_coroutines) do
+		if key:find(prefix, 1, true) == 1 then
+			waiting_coroutines[key] = nil
+		end
+	end
 end
 
 --- Registers a coroutine to wait for a specific LSP notification on a buffer.
@@ -67,7 +83,7 @@ end
 ---@param co thread
 ---@param client_id? integer
 M.register_waiting_coroutine = function(bufnr, method, co, client_id)
-	local key = string.format("%d|%s", bufnr, method:lower())
+	local key = create_waiting_cr_key(bufnr, method)
 	waiting_coroutines[key] = { co = co, client_id = client_id }
 end
 
@@ -75,7 +91,7 @@ end
 ---@param bufnr integer
 ---@param method string
 M.clear_waiting_coroutine = function(bufnr, method)
-	local key = string.format("%d|%s", bufnr, method:lower())
+	local key = create_waiting_cr_key(bufnr, method)
 	waiting_coroutines[key] = nil
 end
 
@@ -87,7 +103,7 @@ end
 ---@param client_id? integer
 M.resume_waiting_coroutine = function(bufnr, method, result, err, client_id)
 	method = method:lower()
-	local key = string.format("%d|%s", bufnr, method)
+	local key = create_waiting_cr_key(bufnr, method)
 	local entry = waiting_coroutines[key]
 	if entry then
 		if client_id and entry.client_id and entry.client_id ~= client_id then

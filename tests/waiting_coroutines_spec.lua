@@ -28,5 +28,16 @@ return {
 
     assert(result == expected_result, "Coroutine resumed with incorrect result")
     assert(err == nil, "Coroutine resumed with error")
+
+
+	-- 3. Verify remove_query_manager purges all pending coroutines for bufnr
+	local dummy_co = coroutine.create(function() end)
+	state.register_waiting_coroutine(bufnr, "query/complete", dummy_co, client_id)
+	state.register_waiting_coroutine(bufnr, "connection/complete", dummy_co, client_id)
+
+	state.remove_query_manager(bufnr)
+
+	state.resume_waiting_coroutine(bufnr, "query/complete", "ignored", nil, client_id)
+	assert(coroutine.status(dummy_co) == "suspended", "Coroutines should have been purged by remove_query_manager")
   end,
 }
