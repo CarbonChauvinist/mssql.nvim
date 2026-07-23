@@ -236,6 +236,7 @@ end
 ---@param query_manager MssqlQueryManager
 ---@param bufnr integer
 ---@return boolean? success
+---@return string? err
 M.perform_connect_async = function(opts, query_manager, bufnr)
 	local json = utils.get_connections(opts)
 	if not json then
@@ -266,7 +267,11 @@ M.perform_connect_async = function(opts, query_manager, bufnr)
 		},
 	}
 
-	query_manager:connect_async(connectParams)
+	local ok, err = query_manager:connect_async(connectParams)
+	if not ok then
+		utils.log_error(err or "Failed to connect")
+		return false, err
+	end
 
 	if con.promptForDatabase then
 		M.switch_database_async(bufnr)
