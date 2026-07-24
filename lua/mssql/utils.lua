@@ -363,6 +363,10 @@ M.reconnect_session = function(qm, reason, opts)
 	qm:set_state(qm.states.disconnected)
 	M.log_info(reason .. ". Reconnecting...")
 
+	-- take precedence to any prior in-flight reconnect coroutines for this QM
+	qm.reconnect_token = (qm.reconnect_token or 0) + 1
+	local my_token = qm.reconnect_token
+
 	M.try_resume(coroutine.create(function()
 		local attempts = 0
 		local max_attempts = math.ceil(timeout_ms / interval)
@@ -371,6 +375,12 @@ M.reconnect_session = function(qm, reason, opts)
 
 		while attempts < max_attempts do
 			M.defer_async(interval)
+
+			-- cancel if superseded by a newer reconnect or qm was cleaned up
+			if qm.reconnect_token ~= my_token or (qm.is_valid and not qm:is_valid()) then
+				return false, "Reconnect canceled"
+			end
+
 			if not params then return false, "Does not have connect params to reuse" end
 			local success, err = qm:connect_async(params)
 			if success then

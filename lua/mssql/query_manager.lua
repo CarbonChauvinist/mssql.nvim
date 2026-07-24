@@ -41,6 +41,7 @@ function MssqlQueryManager.new(bufnr, client, opts)
 	self.query_timeout = opts.query_timeout
 	self.intellisense_ready = false
 	self.result_buffers = {}
+	self.reconnect_token = nil
 
 	local attached = vim.api.nvim_buf_attach(bufnr, false, {
 		on_detach = function()

@@ -207,6 +207,7 @@
 ---@field start_time number
 ---@field query_timeout number?
 ---@field result_buffers integer[]?
+---@field reconnect_token integer?
 ---@field set_intellisense_ready fun(self: MssqlQueryManager, is_ready: boolean)
 ---@field is_intellisense_ready fun(self: MssqlQueryManager): boolean
 ---@field get_owner_uri fun(self: MssqlQueryManager): string
