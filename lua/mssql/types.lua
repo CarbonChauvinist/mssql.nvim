@@ -206,6 +206,7 @@
 ---@field last_execution_info MssqlExecutionInfo
 ---@field start_time number
 ---@field query_timeout number?
+---@field result_buffers integer[]?
 ---@field set_intellisense_ready fun(self: MssqlQueryManager, is_ready: boolean)
 ---@field is_intellisense_ready fun(self: MssqlQueryManager): boolean
 ---@field get_owner_uri fun(self: MssqlQueryManager): string
@@ -236,6 +237,7 @@
 ---@field handle_query_message fun(self: MssqlQueryManager, result: MssqlQueryMessageResult)
 ---@field cleanup fun(self: MssqlQueryManager)
 ---@field is_valid fun(self: MssqlQueryManager): boolean
+---@field clear_result_buffers fun(self: MssqlQueryManager)
 
 ---@class MssqlQueryManagerStates
 ---@field disconnected MssqlQueryManagerState

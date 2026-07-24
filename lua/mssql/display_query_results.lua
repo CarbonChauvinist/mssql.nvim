@@ -1,8 +1,6 @@
 local utils = require("mssql.utils")
 
 local M = {}
----@type integer[]
-local result_buffers = {}
 
 ---@param table string[][]
 ---@param limit integer
@@ -111,15 +109,21 @@ local function pretty_print(column_headers, rows, max_width)
 end
 
 
----@param name string
----@param filetype? string
+---param opts? { name: string, filetype:? string, qm:? MssqlQueryManager }
 ---@return integer bufnr
-local function create_buffer(name, filetype)
+local function create_buffer(opts)
+	opts = opts or {}
+	local name = opts.name
+	local filetype = opts.filetype
 	local bufnr = vim.api.nvim_create_buf(false, false)
-	table.insert(result_buffers, bufnr)
+	local qm = opts.qm
+
 	vim.api.nvim_buf_set_name(bufnr, name)
 	if filetype and filetype ~= "" then
-		vim.bo[bufnr].filetype = filetype
+		vim.api.nvim_set_option_value("filetype", filetype, { buf = bufnr })
+	end
+	if qm then
+		table.insert(qm.result_buffers, bufnr)
 	end
 	return bufnr
 end
@@ -229,10 +233,25 @@ local function show_result_set_async(result_set_summary, subset_params, opts)
 		extension = "." .. extension
 	end
 
-	local buf = create_buffer(
-		"results " .. subset_params.batchIndex + 1 .. "-" .. subset_params.resultSetIndex + 1 .. extension,
-		opts.results_buffer_filetype
+	local owner_buf = vim.fn.bufnr(vim.uri_to_fname(subset_params.ownerUri))
+	local qm = require("mssql.state").get_query_manager(owner_buf)
+
+	local orig_name = vim.api.nvim_buf_get_name(owner_buf)
+	local short_name = vim.fn.fnamemodify(orig_name, ":t")
+	if short_name == "" then short_name = tostring(owner_buf) end
+
+	local name = string.format("results %d-%d [%s]%s",
+		subset_params.batchIndex + 1,
+		subset_params.resultSetIndex + 1,
+		short_name,
+		extension
 	)
+
+	local buf = create_buffer({
+		name = name,
+		filetype = opts.results_buffer_filetype,
+		qm = qm,
+	})
 
 	---@type QueryResultInfo
 	local info = {
@@ -351,14 +370,13 @@ end
 ---@param opts MssqlOptions
 ---@param result MssqlQueryExecuteSubsetResult
 function M.display_query_results(opts, result)
-	-- delete existing result buffers
-	for _, result_buffer in ipairs(result_buffers) do
-		if vim.api.nvim_buf_is_valid(result_buffer) then
-			vim.api.nvim_buf_delete(result_buffer, { force = true })
-		end
-	end
-
 	if utils.is_empty(result) or utils.is_empty(result.batchSummaries) then return end
+	local owner_buf = vim.fn.bufnr(vim.uri_to_fname(result.ownerUri))
+	local qm = require("mssql.state").get_query_manager(owner_buf)
+
+	if qm then
+		qm:clear_result_buffers()
+	end
 
 	for batch_index, batch_summary in ipairs(result.batchSummaries) do
 		if not utils.is_empty(batch_summary) and not batch_summary.hasError and not utils.is_empty(batch_summary.resultSetSummaries) then

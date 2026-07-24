@@ -40,6 +40,7 @@ function MssqlQueryManager.new(bufnr, client, opts)
 	self.start_time = 0
 	self.query_timeout = opts.query_timeout
 	self.intellisense_ready = false
+	self.result_buffers = {}
 
 	local attached = vim.api.nvim_buf_attach(bufnr, false, {
 		on_detach = function()
@@ -555,6 +556,7 @@ end
 --- Stop activity but preserve state needed for reloads (i.e. :edit)
 function MssqlQueryManager:cleanup()
 	self:cleanup_timer()
+	self:clear_result_buffers()
 
 	local opts = self:get_connection_options()
 	if opts then
@@ -576,6 +578,24 @@ function MssqlQueryManager:is_valid()
 		and self.bufnr ~= nil
 		and vim.api.nvim_buf_is_valid(self.bufnr)
 		and self.client.id ~= nil
+end
+
+function MssqlQueryManager:clear_result_buffers()
+	local bufs = self.result_buffers
+	self.result_buffers = {}
+
+	for _, bufnr in ipairs(bufs) do
+		if vim.api.nvim_buf_is_valid(bufnr) then
+			local ok = pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+			if not ok then
+				vim.schedule(function()
+					if vim.api.nvim_buf_is_valid(bufnr) then
+						pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+					end
+				end)
+			end
+		end
+	end
 end
 
 return MssqlQueryManager
