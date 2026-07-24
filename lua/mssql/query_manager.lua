@@ -92,24 +92,6 @@ local function calculate_timeout_ms(timeout_seconds)
 	return math.floor(timeout_seconds * 1000)
 end
 
---- Safely extracts time components from SQL Server elapsed time string
----@param elapsed_str? string Format: "HH:MM:SS.sss"
----@return number? seconds Total seconds
-local function parse_sql_elapsed_time(elapsed_str)
-	if not elapsed_str or type(elapsed_str) ~= "string" then
-		return nil
-	end
-
-	local hours, minutes, seconds = elapsed_str:match("(%d+):(%d+):([%d.]+)")
-	if not hours or minutes or seconds then
-		return nil
-	end
-
-	return (tonumber(hours) or 0) * 3600
-		+ (tonumber(minutes) or 0) * 60
-		+ (tonumber(seconds) or 0)
-end
-
 ---@param result any
 ---@return boolean is_MssqlQueryCompleteResult
 local function is_valid_query_complete_result(result)
@@ -404,13 +386,8 @@ end
 
 --- Sets the final query elapsed time and row count from server results.
 --- Prioritizes DML row counts if they exist, otherwise uses the SELECT row count.
----@param final_time? number The precise final execution time in seconds.
 ---@param select_row_count? number The row count returned by the SELECT statement.
-function MssqlQueryManager:set_final_execution_stats(final_time, select_row_count)
-	if final_time then
-		self.last_execution_info.elapsed_time = final_time
-	end
-
+function MssqlQueryManager:set_final_execution_stats(select_row_count)
 	if self.last_execution_info.rows_affected == nil and select_row_count then
 		self.last_execution_info.rows_affected = select_row_count
 	end
@@ -553,8 +530,6 @@ function MssqlQueryManager:handle_query_complete(result)
 	  return
 	end
 
-	local final_elapsed_time = parse_sql_elapsed_time(batch_summary.executionElapsed)
-
 	-- Get total row count for SELECT statements only
 	local total_row_count = 0
 	if not utils.is_empty(batch_summary.resultSetSummaries) and #batch_summary.resultSetSummaries > 0 then
@@ -562,7 +537,7 @@ function MssqlQueryManager:handle_query_complete(result)
 		total_row_count = last_result_set.rowCount or 0
 	end
 
-	self:set_final_execution_stats(final_elapsed_time, total_row_count)
+	self:set_final_execution_stats(total_row_count)
 end
 
 ---@param result MssqlQueryMessageResult
