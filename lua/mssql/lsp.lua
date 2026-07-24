@@ -218,7 +218,7 @@ M.wait_for_attach = function(bufnr, timeout_ms)
 		local qm = state.get_query_manager(bufnr)
 		if qm and qm.client
 			and not qm.client:is_stopped()
-			and not qm.client._is_stopping()
+			and not qm.client._is_stopping
 		then
 			return qm.client
 		end
