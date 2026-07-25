@@ -28,7 +28,7 @@ export DbServer="${DbServer:-localhost}"
 export DbUser="${DbUser:-sa}"
 export DbPassword="${DbPassword:-Test_Password_123}"
 export DbDatabase="${DbDatabase:-tempdb}"
-export SKIP_DOWNLOAD="${SKIP_DOWNLOAD:-1}"
+export SKIP_DOWNLOAD="${SKIP_DOWNLOAD-1}"
 
 command -v nvim >/dev/null || {
 	echo "nvim required" >&2
