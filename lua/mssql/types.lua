@@ -136,14 +136,14 @@
 
 ---@class MssqlObjectFilter
 ---@field allow string[]? List of patterns or strings (e.g. "dbo.*", "sales.User*", "special_schema.single_table") to allow
----@field deny string[]? List of patterns to deny. Deny takes precendence.
+---@field deny string[]? List of patterns to deny. Deny takes precedence.
 
 ---@class MssqlConnectionOptions
 ---@field server? string
 ---@field database? string
 ---@field databaseAllowList? string[]
 ---@field databaseDenyList? string[]
----@field object_filters table<string, MssqlObjectFilter>? Keys are 't', 'v', 'sp', 'f'
+---@field objectFilters table<string, MssqlObjectFilter>? Keys are 't', 'v', 'sp', 'f'
 ---@field user? string
 ---@field password? string
 ---@field authentication? string
