@@ -107,6 +107,17 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 			return
 		end
 
+		-- guard against cancelled while createsession request in-flight
+		if not utils.is_empty(result) and not utils.is_empty(result.sessionId) then
+			if cancellation_token and cancellation_token.cancel then
+				pcall(function()
+					---@diagnostic disable-next-line:param-type-mismatch
+					client:request("objectexplorer/closeSession", { sessionId = result.sessionId })
+				end)
+				return
+			end
+		end
+
 		if not utils.is_empty(result) and not utils.is_empty(result.rootNode) then
 			if not resumed then
 				resumed = true
@@ -212,6 +223,7 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
     local co = coroutine.running()
 	local timeout_timer
 	local retried_paths = {}
+	local cleanup_done = false
 
 	-- setup traversal paths
 	-- Note: session.target_path might be nil if we connected to Root (server scope)
@@ -223,6 +235,10 @@ local get_object_cache_async = function(lsp_client, connection_options, cancella
 	local expand
 
 	local clean_up_and_return = function(return_value, cleanup_err)
+		-- guarantee idempotency during tree traversal, prevents double-teardown and dead coroutine resumes
+		if cleanup_done then return end
+		cleanup_done = true
+
 		if timeout_timer and not timeout_timer:is_closing() then
 			timeout_timer:close()
 			timeout_timer = nil

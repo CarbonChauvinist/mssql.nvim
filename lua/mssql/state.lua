@@ -87,6 +87,14 @@ M.register_waiting_coroutine = function(bufnr, method, co, client_id)
 	waiting_coroutines[key] = { co = co, client_id = client_id }
 end
 
+---@param bufnr integer
+---@param method string
+---@return boolean
+M.has_waiting_coroutine = function(bufnr, method)
+	local key = create_waiting_cr_key(bufnr, method)
+	return waiting_coroutines[key] ~= nil
+end
+
 ---Clears a waiting coroutine reference (e.g. after a timeout or cancellation).
 ---@param bufnr integer
 ---@param method string

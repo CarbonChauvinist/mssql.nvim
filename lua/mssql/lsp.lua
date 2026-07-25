@@ -160,6 +160,18 @@ local customized_handlers = {
 		explorer.handle_expand_completed(err, result, ctx)
 	end),
 
+	["objectexplorer/sessioncreated"] = make_handler("objectexplorer/sessioncreated", function(err, result, ctx)
+		if result and not utils.is_empty(result.sessionId) then
+			if not state.has_waiting_coroutine(0, "objectexplorer/sessioncreated") then
+				local client_id = ctx and ctx.client_id
+				local client = client_id and vim.lsp.get_client_by_id(client_id)
+				if client then
+					pcall(function() client:request("objectexplorer/closeSession", { sessionId = result.sessionId }) end)
+				end
+			end
+		end
+	end),
+
 	["connection/connectionchanged"] = make_handler("connection/connectionchanged", function(_, result, _)
 		if utils.is_empty(result) or utils.is_empty(result.ownerUri) then return end
 		local bufnr = vim.iter(vim.api.nvim_list_bufs()):find(function(buf)
