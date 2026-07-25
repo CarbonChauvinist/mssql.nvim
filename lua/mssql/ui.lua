@@ -5,10 +5,21 @@ local lsp = require("mssql.lsp")
 
 local M = {}
 
-local mssql_window
 local message_buffer
 local message_buffer_error_ns = vim.api.nvim_create_namespace("mssql_error_highlight")
 local show_caching_in_status_line = false
+
+---Returns the valid results split window ID for the current tabage, or nil if invalid
+---Resets `vim.t.mssql_results_win` to prevent stale window handle references when closed
+---@return integer? win The valid results windows ID, or nil if closed/invalid
+local get_valid_results_win = function()
+	local win = vim.t.mssql_results_win
+	if win and vim.api.nvim_win_is_valid(win) then
+		return win
+	end
+	vim.t.mssql_results_win = nil
+	return nil
+end
 
 ---Setter for external modules to toggle caching status in lualine
 ---@param is_caching boolean
@@ -90,28 +101,32 @@ M.show_results_buffer_options = {
 	end,
 	split = function(bufnr)
 		local original_window = vim.api.nvim_get_current_win()
+		local win = get_valid_results_win()
 
 		-- open a split if we haven't done already
-		if not (mssql_window and vim.api.nvim_win_is_valid(mssql_window)) then
+		if not win then
 			vim.cmd("split")
-			mssql_window = vim.api.nvim_get_current_win()
+			win = vim.api.nvim_get_current_win()
+			vim.t.mssql_results_win = win
 		end
 
 		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
-		vim.api.nvim_win_set_buf(mssql_window, bufnr)
+		vim.api.nvim_win_set_buf(win, bufnr)
 		vim.api.nvim_set_current_win(original_window)
 	end,
 	vsplit = function(bufnr)
 		local original_window = vim.api.nvim_get_current_win()
+		local win = get_valid_results_win()
 
 		-- open a split if we haven't done already
-		if not (mssql_window and vim.api.nvim_win_is_valid(mssql_window)) then
+		if not win then
 			vim.cmd("vsplit")
-			mssql_window = vim.api.nvim_get_current_win()
+			win = vim.api.nvim_get_current_win()
+			vim.t.mssql_results_win = win
 		end
 
 		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
-		vim.api.nvim_win_set_buf(mssql_window, bufnr)
+		vim.api.nvim_win_set_buf(win, bufnr)
 		vim.api.nvim_set_current_win(original_window)
 	end,
 }
