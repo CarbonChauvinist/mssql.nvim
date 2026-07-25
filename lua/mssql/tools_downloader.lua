@@ -4,19 +4,34 @@ local M = {}
 
 -- Check the OS and system architecture
 M.get_tools_download_url = function()
+	local base_url = "https://github.com/microsoft/sqltoolsservice/releases/download"
+	local sts_ver = "6.0.20260709.1"
+	local dotnet_ver = "net10.0"
+	local MIGRATION = "Microsoft.SqlTools.Migration"
+	local SERVICE_LAYER = "Microsoft.SqlTools.ServiceLayer"
+
+	---@param pkg string
+	---@param os_name string
+	---@param arch string
+	---@param ext string
+	---@return string
+	local make_url = function(pkg, os_name, arch, ext)
+		return string.format("%s/%s/%s-%s-%s-%s.%s", base_url, sts_ver, pkg, os_name, arch, dotnet_ver, ext)
+	end
+
 	local urls = {
 		Windows = {
-			arm64 = "https://github.com/microsoft/sqltoolsservice/releases/download/6.0.20260709.1/Microsoft.SqlTools.Migration-win-arm64-net10.0.zip",
-			x64 = "https://github.com/microsoft/sqltoolsservice/releases/download/6.0.20260709.1/Microsoft.SqlTools.Migration-win-x64-net10.0.zip",
-			x86 = "https://github.com/microsoft/sqltoolsservice/releases/download/6.0.20260709.1/Microsoft.SqlTools.Migration-win-x86-net10.0.zip",
+			arm64 = make_url(MIGRATION, "win", "arm64", "zip"),
+			x64 = make_url(MIGRATION, "win", "x64", "zip"),
+			x86 = make_url(MIGRATION, "win", "x86", "zip"),
 		},
 		Linux = {
-			arm64 = "https://github.com/microsoft/sqltoolsservice/releases/download/6.0.20260709.1/Microsoft.SqlTools.ServiceLayer-linux-arm64-net10.0.tar.gz",
-			x64 = "https://github.com/microsoft/sqltoolsservice/releases/download/6.0.20260709.1/Microsoft.SqlTools.ServiceLayer-linux-x64-net10.0.tar.gz",
+			arm64 = make_url(SERVICE_LAYER, "linux", "arm64", "tar.gz"),
+			x64 = make_url(SERVICE_LAYER, "linux", "x64", "tar.gz"),
 		},
 		OSX = {
-			arm64 = "https://github.com/microsoft/sqltoolsservice/releases/download/6.0.20260709.1/Microsoft.SqlTools.Migration-osx-arm64-net10.0.tar.gz",
-			x64 = "https://github.com/microsoft/sqltoolsservice/releases/download/6.0.20260709.1/Microsoft.SqlTools.ServiceLayer-osx-x64-net10.0.tar.gz",
+			arm64 = make_url(SERVICE_LAYER, "osx", "arm64", "tar.gz"),
+			x64 = make_url(SERVICE_LAYER, "osx", "x64", "tar.gz")
 		},
 	}
 	local sha256sums = {
@@ -31,7 +46,7 @@ M.get_tools_download_url = function()
 		},
 		OSX = {
 			arm64 = "83dbab91f26b37fa166b76dd7b998a14878f9dfe379da2db933bb07f90249e65",
-			x64 = "47d3d758b529e72cac0519a2d6bb9c9e046f60d2008e048fdd9b8d3de3d28461"
+			x64 = "ae48b70623c493c9366bafb79ab6f577f6a2726079b53351ce395df8b7974a1a"
 		}
 	}
 
