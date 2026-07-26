@@ -777,7 +777,21 @@ M.run_with_mocks = function(mocks, func)
 	vim.fn.input = function() return mocks.input_value end
 	utils.log_info = function(msg) table.insert(captures.logs, "INFO: " .. msg) end
 	utils.log_error = function(msg) table.insert(captures.logs, "ERROR: " .. msg) end
-	vim.cmd = function(cmd) table.insert(captures.cmds, cmd) end
+	-- ensure full metatable compatibility to allow both vim.cmd.<cmd>() and vim.cmd({ cmd = <cmd> ... })
+	vim.cmd = setmetatable({}, {
+		__call = function(_, cmd)
+			table.insert(captures.cmds, cmd)
+		end,
+		__index = function(_, command_name)
+			return function(opts)
+				local cmd_struct = { cmd = command_name }
+				if type(opts) == "table" then
+					cmd_struct = vim.tbl_extend("keep", cmd_struct, opts)
+				end
+				table.insert(captures.cmds, cmd_struct)
+			end
+		end,
+	})
 
 	next_mock_client_id = next_mock_client_id + 1
 
