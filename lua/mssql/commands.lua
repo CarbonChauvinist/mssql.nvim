@@ -84,9 +84,10 @@ M.restore_database_async = function(query_manager)
 	if not file or file == "" then
 		error("No file chosen", 0)
 	end
+	local escaped_file = file:gsub("'", "''")
 
-	local internal_files = utils.get_query_result_async(query_manager:execute_async("RESTORE FILELISTONLY FROM DISK = '" .. file .. "'"))
-	local headers = utils.get_query_result_async(query_manager:execute_async("RESTORE HEADERONLY FROM DISK = '" .. file .. "'"))[1]
+	local internal_files = utils.get_query_result_async(query_manager:execute_async("RESTORE FILELISTONLY FROM DISK = '" .. escaped_file .. "'"))
+	local headers = utils.get_query_result_async(query_manager:execute_async("RESTORE HEADERONLY FROM DISK = '" .. escaped_file .. "'"))[1]
 
 	local database = headers.DatabaseName
 	local size = tonumber(headers.BackupSize)
@@ -118,7 +119,7 @@ STATS = %s
 ALTER DATABASE [%s] SET MULTI_USER]],
 		database,
 		database,
-		file,
+		escaped_file,
 		moves,
 		stats,
 		database
@@ -174,7 +175,7 @@ M.save_query_results_async = function(result_info)
 	utils.log_info("File saved")
 
 	if openAfterSave then
-		vim.cmd("edit " .. file)
+		vim.cmd({ cmd = "edit", args = { file } })
 	end
 end
 

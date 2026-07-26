@@ -1,6 +1,22 @@
 local mssql = require("mssql")
 local test_utils = require("tests/utils")
 
+---Explores safe table syntax of `vim.cmd` call to confirm cmd and presence of args
+---@param cmds table
+---@expected_cmd string
+---@expected_arg string
+---@return boolean success
+local has_cmd = function(cmds, expected_cmd, expected_arg)
+	for _, c in ipairs(cmds) do
+		if type(c) == "table" and c.cmd == expected_cmd then
+			if not expected_arg or (c.args and vim.list_contains(c.args, expected_arg)) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 return {
 	test_name = "save_query_results should call LSP with correct params",
 	run_test_async = function()
@@ -26,13 +42,13 @@ return {
 			assert(#c.requests == 1, "Should make LSP request")
 			assert(c.requests[1].method == "query/saveCsv", "Wrong method")
 			assert(c.requests[1].params.FilePath == "test.csv", "Wrong path")
-			assert(vim.list_contains(c.cmds, "edit test.csv"), "Should edit file")
+			assert(has_cmd(c.cmds, "edit", "test.csv"), "Should edit file")
 		end)
 
 		check_save("test.xlsx", function(c)
 			assert(#c.requests == 1, "Should make LSP request")
 			assert(c.requests[1].method == "query/saveExcel", "Wrong method")
-			assert(not vim.list_contains(c.cmds, "edit test.xlsx"), "Should NOT edit xlsx")
+			assert(not has_cmd(c.cmds, "edit", "test.xlsx"), "Should NOT edit xlsx")
 		end)
 
 		-- invalid extension
