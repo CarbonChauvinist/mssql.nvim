@@ -103,7 +103,7 @@ return {
           deny = { "security.*" },
         },
         -- Case 3: Sprocs (Allow Only -> Implicit Deny Others)
-        sp = {
+        p = {
           allow = { "api.*" },
         },
       },

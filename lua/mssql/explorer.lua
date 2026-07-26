@@ -484,7 +484,7 @@ end
 M.OBJECT_TYPE_MAP = {
 	AggregateFunctionPartitionFunction = "f",
 	ScalarValuedFunction = "f",
-	StoredProcedure = "sp",
+	StoredProcedure = "p",
 	TableValuedFunction = "f",
 	Table = "t",
 	View = "v",

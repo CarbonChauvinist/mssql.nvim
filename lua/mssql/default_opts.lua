@@ -137,7 +137,7 @@ local M = {
 
 	---@type table<string, NodeActionConfig[]>
 	find_object_actions = {
-		sp = {
+		p = {
 			default = "alter",
 			actions = {
 				{ action = "create", label = "Create Sproc" },

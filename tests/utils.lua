@@ -590,8 +590,9 @@ M.wait_for_cache_content = function(item_label, opts)
 
 					if name_match then
 						local item_type = item.objectType or item.nodeType
+						local short_code = explorer.OBJECT_TYPE_MAP[item_type]
 
-						if not opts.type or item_type == opts.type then
+						if not opts.type or item_type == opts.type or short_code == opts.type then
 							return true
 						end
 

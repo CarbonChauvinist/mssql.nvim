@@ -270,7 +270,7 @@ The format is `"connection name": connection object`. Eg:
         },
 
         -- Sprocs: ONLY allow 'api' schema (Denies dbo, sales, etc. by omission)
-        "sp": {
+        "p": {
             "allow": ["api.*"]
         },
 
@@ -356,7 +356,7 @@ require("mssql").setup({
     -- Views (v)
     v = { default = "select", actions = { "create", "alter", "select" } },
     -- Stored Procedures (sp)
-    sp = { default = "alter", actions = { "execute", "alter", "create" } },
+    p = { default = "alter", actions = { "execute", "alter", "create" } },
     -- Functions (f)
     f = { default = "execute", actions = { "create", "alter", "drop" } },
   }

@@ -143,7 +143,7 @@
 ---@field database? string
 ---@field databaseAllowList? string[]
 ---@field databaseDenyList? string[]
----@field objectFilters table<string, MssqlObjectFilter>? Keys are 't', 'v', 'sp', 'f'
+---@field objectFilters table<string, MssqlObjectFilter>? Keys are 't', 'v', 'p', 'f'
 ---@field user? string
 ---@field password? string
 ---@field authentication? string
