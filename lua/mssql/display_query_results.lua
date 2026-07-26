@@ -2,10 +2,10 @@ local utils = require("mssql.utils")
 
 local M = {}
 
----@param table string[][]
+---@param tbl string[][]
 ---@param limit integer
-local function sanitise(table, limit)
-	for _, record in ipairs(table) do
+local function sanitise(tbl, limit)
+	for _, record in ipairs(tbl) do
 		for index, value in ipairs(record) do
 			local str = tostring(value)
 			-- truncate
