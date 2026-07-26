@@ -285,63 +285,37 @@ local function show_result_set_async(result_set_summary, subset_params, opts)
 	end
 end
 
----Navigate to the next page of query results
-function M.next_page()
+---Navigate pages in query results buffer
+---@param direction "next" | "prev" | "first" | "last"
+M.navigate_page = function(direction)
 	utils.try_resume(coroutine.create(function()
 		local buf = vim.api.nvim_get_current_buf()
 		---@type QueryResultInfo?
 		local info = vim.b[buf].query_result_info
-		if not info then
-			return
+		if not info then return end
+
+		local target_offset = 0
+		if direction == "next" then
+			target_offset = info.currentRowsOffset + info.rowsPerQuery
+		elseif direction == "prev" then
+			target_offset = info.currentRowsOffset - info.rowsPerQuery
+		elseif direction == "first" then
+			target_offset = 0
+		elseif direction == "last" then
+			if info.totalRows > 0 then
+				target_offset = math.floor((info.totalRows - 1) / info.rowsPerQuery) * info.rowsPerQuery
+			end
 		end
-		fetch_and_render_page(buf, info.currentRowsOffset + info.rowsPerQuery)
+
+		fetch_and_render_page(buf, target_offset)
 	end))
 end
 
----Navigate to the previous page of of query results
-function M.prev_page()
-	utils.try_resume(coroutine.create(function()
-		local buf = vim.api.nvim_get_current_buf()
-		---@type QueryResultInfo?
-		local info = vim.b[buf].query_result_info
-		if not info then
-			return
-		end
-		fetch_and_render_page(buf, info.currentRowsOffset - info.rowsPerQuery)
-	end))
-end
+function M.next_page() M.navigate_page("next") end
+function M.prev_page() M.navigate_page("prev") end
+function M.first_page() M.navigate_page("first") end
+function M.last_page() M.navigate_page("last") end
 
----Navigate to the first page of query results
-function M.first_page()
-	utils.try_resume(coroutine.create(function()
-		local buf = vim.api.nvim_get_current_buf()
-		---@type QueryResultInfo?
-		local info = vim.b[buf].query_result_info
-		if not info then
-			return
-		end
-		fetch_and_render_page(buf, 0)
-	end))
-end
-
----Navigate to the last page of query results
-function M.last_page()
-	utils.try_resume(coroutine.create(function()
-		local buf = vim.api.nvim_get_current_buf()
-		---@type QueryResultInfo?
-		local info = vim.b[buf].query_result_info
-		if not info then
-			return
-		end
-
-		local last_page_start = 0
-		if info.totalRows > 0 then
-			last_page_start = math.floor((info.totalRows - 1) / info.rowsPerQuery) * info.rowsPerQuery
-		end
-		fetch_and_render_page(buf, last_page_start)
-	end))
-end
----
 ---Get pagination status string for display in statusline
 ---@param bufnr? integer
 ---@return string
