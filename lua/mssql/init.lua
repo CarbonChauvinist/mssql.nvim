@@ -8,6 +8,7 @@ local default_opts = require("mssql.default_opts")
 local downloader = require("mssql.tools_downloader")
 local display_query_results = require("mssql.display_query_results")
 local autocmds = require("mssql.autocmds")
+local explorer = require("mssql.explorer")
 
 local joinpath = vim.fs.joinpath
 local M = {}
@@ -123,7 +124,7 @@ M.switch_database = utils.async(function(bufnr, callback)
 
 	cmds.switch_database_async(bufnr)
 	qm:initialise_explorer_cache_async({ is_background = true })
-	autocmds.clean_cache()
+	explorer.clean_cache()
 	if callback then callback() end
 end)
 
@@ -164,7 +165,7 @@ M.connect = utils.async(function(bufnr)
 	if cmds.perform_connect_async(curr_conf, qm, bufnr) then
 		qm:initialise_explorer_cache_async( { is_background = true })
 	end
-	autocmds.clean_cache()
+	explorer.clean_cache()
 end)
 
 M.edit_connections = function()
@@ -247,7 +248,7 @@ M.disconnect = utils.async(function(bufnr)
 	end
 
 	qm:disconnect_async()
-	autocmds.clean_cache()
+	explorer.clean_cache()
 end)
 
 ---@param opts? MssqlExecuteOptions

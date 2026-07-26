@@ -594,6 +594,24 @@ M.create_cache_key = function(opts, scope)
 	end
 end
 
+---Scans active buffers and removes unused database entries from the cache
+M.clean_cache = function()
+	local active_managers = state.get_all_query_managers() or {}
+	local in_use_connections = {}
+
+	for _, bufnr in ipairs(active_managers) do
+		local qm = state.get_query_manager(bufnr)
+		if qm and qm:get_state() ~= qm.states.disconnected then
+			local params = qm:get_connect_params()
+			if params and params.connection and params.connection.options then
+				table.insert(in_use_connections, params.connection.options)
+			end
+		end
+	end
+
+	M.delete_unused_cache(in_use_connections)
+end
+
 ---@param in_use_connections MssqlConnectionOptions[]
 M.delete_unused_cache = function(in_use_connections)
 

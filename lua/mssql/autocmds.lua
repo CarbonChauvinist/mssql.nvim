@@ -4,24 +4,6 @@ local explorer = require("mssql.explorer")
 
 local M = {}
 
----Scans active buffers and removes unused database entries from the cache
-M.clean_cache = function()
-	local active_managers = state.get_all_query_managers() or {}
-	local in_use_connections = {}
-
-	for _, bufnr in ipairs(active_managers) do
-		local qm = state.get_query_manager(bufnr)
-		if qm and qm:get_state() ~= qm.states.disconnected then
-			local params = qm:get_connect_params()
-			if params and params.connection and params.connection.options then
-				table.insert(in_use_connections, params.connection.options)
-			end
-		end
-	end
-
-	explorer.delete_unused_cache(in_use_connections)
-end
-
 ---@param opts MssqlOptions
 M.setup = function(opts)
 	vim.api.nvim_create_augroup("AutoNameSQL", { clear = true })
@@ -74,7 +56,7 @@ M.setup = function(opts)
 				qm:cleanup()
 				state.remove_query_manager(buf)
 				vim.schedule(function()
-					M.clean_cache()
+					explorer.clean_cache()
 				end)
 			end
 

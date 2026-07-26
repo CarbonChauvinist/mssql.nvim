@@ -32,24 +32,6 @@ local M = {
 }
 local lsp_name = "mssql_ls"
 
----Refreshes the object cache for all active connections
-local function clean_cache()
-	local in_use_connections = {}
-	local active_managers = state.get_all_query_managers() or {}
-
-	for _, bufnr in ipairs(active_managers) do
-		local qm = state.get_query_manager(bufnr)
-		if qm and qm:get_state() ~= qm.states.disconnected then
-			local params = qm:get_connect_params()
-			if params and params.connection and params.connection.options then
-				table.insert(in_use_connections, params.connection.options)
-			end
-		end
-	end
-
-	explorer.delete_unused_cache(in_use_connections)
-end
-
 -- Helper to resolve the buffer number for notifications and requests
 local function get_bufnr(result, ctx)
 	if not utils.is_empty(result) and type(result) == "table" and not utils.is_empty(result.ownerUri) then
@@ -185,7 +167,7 @@ local customized_handlers = {
 		coroutine.resume(coroutine.create(function()
 			qm:connectionchanged_async(result)
 		end))
-		clean_cache()
+		explorer.clean_cache()
 	end),
 }
 
@@ -206,8 +188,6 @@ setmetatable(customized_handlers, {
 })
 
 M.make_handler = make_handler
-M.clean_cache = clean_cache
-
 
 ---Waits for the lsp to attach to the given buffer, with optional timeout
 ---Must be run inside a coroutine
