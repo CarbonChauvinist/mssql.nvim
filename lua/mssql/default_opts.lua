@@ -168,7 +168,13 @@ local M = {
 				{ action = "drop", label = "Drop Function" }
 			}
 		},
-	}
+	},
+
+	---@type string? Custom SQL Tools Service version to download (default: "6.0.20260709.1")
+	sts_version = nil,
+
+	---@type string? Custom SQL Tools Service version SHA256 checksum to validate against
+	sts_version_sha256 = nil,
 }
 
 return M

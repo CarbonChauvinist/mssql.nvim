@@ -98,6 +98,8 @@
 ---@field data_dir string? Directory for tools and config.
 ---@field icons MssqlIcons? Icon configuration.
 ---@field find_object_actions table<string, NodeActionConfig>? Configuration for object actions (Table, View, etc)
+---@field sts_version string? Custom SQL Tools Service binary version
+---@field sts_version_sha256 string? Custom SQL Tools Service binary SHA256
 
 ---@class MssqlOptions : MssqlConfig
 ---@field keymap_prefix string
@@ -123,6 +125,8 @@
 ---@field data_dir string
 ---@field icons MssqlIcons
 ---@field find_object_actions table<string, NodeActionConfig>
+---@field sts_version string
+---@field sts_version_sha256 string
 
 ---@class MssqlTimer
 ---@field handle uv_timer_t? The internal libuv handle

@@ -3,9 +3,17 @@ local joinpath = vim.fs.joinpath
 local M = {}
 
 -- Check the OS and system architecture
-M.get_tools_download_url = function()
+---@param opts? { custom_version?: string, custom_version_sha256?: string }
+M.get_tools_download_url = function(opts)
+	opts = opts or {}
+	local state = require("mssql.state")
+	local config = state.get_config() or {}
+	local default_ver = "6.0.20260709.1"
+
+	local sts_ver = opts.custom_version or config.sts_version or default_ver
+	local target_sha256 = opts.custom_version_sha256 or config.sts_version_sha256
+
 	local base_url = "https://github.com/microsoft/sqltoolsservice/releases/download"
-	local sts_ver = "6.0.20260709.1"
 	local dotnet_ver = "net10.0"
 	local MIGRATION = "Microsoft.SqlTools.Migration"
 	local SERVICE_LAYER = "Microsoft.SqlTools.ServiceLayer"
@@ -62,8 +70,18 @@ M.get_tools_download_url = function()
 		error("Your system architecture " .. arch .. " is not supported. It can either be x64 or arm64.", 0)
 	end
 
-	local hash = sha256sums[os] and sha256sums[os][arch]
-	return url, hash
+	---@return string?
+	local get_hash = function()
+		if target_sha256 and target_sha256 ~= "" then
+			return target_sha256
+		elseif sts_ver == default_ver then
+			return sha256sums[os] and sha256sums[os][arch]
+		else
+			return nil
+		end
+	end
+
+	return url, get_hash()
 end
 
 -- Delete any existing download folder, download, unzip and write the most recent url to the config
