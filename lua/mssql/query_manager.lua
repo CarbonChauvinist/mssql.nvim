@@ -19,8 +19,8 @@ local STATE_TRANSITIONS = {
 	disconnected = { "connecting" },
 	connecting = { "connected", "disconnected" },
 	connected = { "connecting", "executing", "disconnected" },
-	executing = { "connected", "cancelling" },
-	cancelling = { "connected" },
+	executing = { "connected", "cancelling", "disconnected" },
+	cancelling = { "connected", "disconnected" },
 }
 
 --- Constructor
@@ -565,7 +565,7 @@ function MssqlQueryManager:cleanup()
 		explorer.cancel_refresh(opts, "server")
 	end
 
-	self.state = MssqlQueryManager.states.disconnected
+	self:set_state(MssqlQueryManager.states.disconnected)
 	self.last_execution_info = { rows_affected = nil, elapsed_time = nil }
 	self.start_time = 0
 
