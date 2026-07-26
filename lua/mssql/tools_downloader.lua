@@ -133,9 +133,11 @@ M.download_tools_async = function(url, data_folder)
 		if raw_hash ~= "" then
 			check_cmd = string.format([[
 			if command -v sha256sum >/dev/null 2>&1; then
-				echo "%s  %s" | shasum -a 256 --check
+				echo "%s  %s" | sha256sum --check
+			elif command -v shasum >/dev/null 2>&1; then
+				echo "%s %s" | shasum -a 256 --check
 			else
-				echo "Error: sha256sum or shasum command not found. Cannot verify checksum." >&2
+				echo "Error: Neither sha256sum nor shasum command not found. Cannot verify checksum." >&2
 				exit 1
 			fi
 			]], raw_hash, temp_file, raw_hash, temp_file)
