@@ -7,7 +7,7 @@ return {
 		test_utils.setup_mssql_async()
 
 		-- admittedly this is an edge case (create unnamed buffer and explicitly set ft)
-		vim.cmd("enew")
+		vim.cmd.enew()
 		local buf = vim.api.nvim_get_current_buf()
 		vim.bo[buf].filetype = "sql"
 

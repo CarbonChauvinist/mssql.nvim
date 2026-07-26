@@ -165,9 +165,9 @@ local function run_suite()
 
 		if #failures > 0 then
 			copy_state_folder()
-			vim.cmd("cquit")
+			vim.cmd.cquit()
 		else
-			vim.cmd("qa!")
+			vim.cmd.qall({ bang = true })
 		end
 	end))
 end

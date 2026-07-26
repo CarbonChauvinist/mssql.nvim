@@ -20,7 +20,7 @@ end
 return {
 	test_name = "save_query_results should call LSP with correct params",
 	run_test_async = function()
-		vim.cmd("enew")
+		vim.cmd.enew()
 		local buf = vim.api.nvim_get_current_buf()
 		vim.b[buf].query_result_info = { ownerUri = "file:///mock_results_buffer.md" }
 

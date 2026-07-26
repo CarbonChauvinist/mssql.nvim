@@ -190,7 +190,7 @@ local mssql_heirline_component = {
 }
 ```
 
-`mssql.nvim` calls `vim.cmd("redrawstatus")` whenever the status changes, so you
+`mssql.nvim` calls `vim.cmd.redrawstatus()` whenever the status changes, so you
 don't need to worry about refreshing
 
 ### Using a keymap that gets overridden later (eg lazyvim)

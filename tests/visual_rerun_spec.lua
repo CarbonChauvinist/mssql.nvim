@@ -13,7 +13,7 @@ return {
 
 		-- 1. Perform first selection (line 1)
 		vim.api.nvim_win_set_cursor(0, { 1, 0 })
-		vim.cmd("normal! V")
+		vim.cmd.normal({ args = { "V" }, bang = true })
 
 		-- Execute query - this should save the selection range as extmarks
 		mssql.execute_query({ bufnr = buf })

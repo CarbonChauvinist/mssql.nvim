@@ -204,7 +204,7 @@ local function fetch_and_render_page(bufnr, new_offset)
 		local lines = pretty_print(column_headers, rows, info.max_column_width)
 
 		display_markdown(lines, bufnr)
-		vim.cmd("redrawstatus!")
+		vim.cmd.redrawstatus({ bang = true })
 		utils.log_info(string.format(
 			"Showing rows %d-%d of %d",
 			info.currentRowsOffset + 1,

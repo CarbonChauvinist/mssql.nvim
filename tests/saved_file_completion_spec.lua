@@ -3,7 +3,7 @@ local test_utils = require("tests.utils")
 return {
 	test_name = "LSP should be configured so that autocomplete works on saved sql files",
 	run_test_async = function()
-		vim.cmd("edit tests/completion.sql")
+		vim.cmd.edit({ args = { "tests/completion.sql" } })
 		local buf = vim.api.nvim_get_current_buf()
 
 		-- move to the first E in SELECT test for "SELECT"

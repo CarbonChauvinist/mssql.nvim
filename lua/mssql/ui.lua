@@ -38,7 +38,7 @@ M.new_query_async = function(opts)
 
 	-- The language server requires all files to have a file name.
 	-- Vscode names new files "untitled-1" etc so we'll do the same
-	vim.cmd("enew")
+	vim.cmd.enew()
 	local buf = vim.api.nvim_get_current_buf()
 	if buf_name and buf_name ~= "" then
 		vim.api.nvim_buf_set_name(buf, buf_name .. ".sql")
@@ -46,7 +46,7 @@ M.new_query_async = function(opts)
 		vim.api.nvim_buf_set_name(buf, "untitled-" .. buf .. ".sql")
 		vim.b[buf].is_temp_name = true
 	end
-	vim.cmd("setfiletype sql")
+	vim.cmd.setfiletype({ args = { "sql" } })
 
 	local client = lsp.wait_for_attach(buf, timeout_ms)
 	return buf, client
@@ -105,7 +105,7 @@ M.show_results_buffer_options = {
 
 		-- open a split if we haven't done already
 		if not win then
-			vim.cmd("split")
+			vim.cmd.split()
 			win = vim.api.nvim_get_current_win()
 			vim.t.mssql_results_win = win
 		end
@@ -120,7 +120,7 @@ M.show_results_buffer_options = {
 
 		-- open a split if we haven't done already
 		if not win then
-			vim.cmd("vsplit")
+			vim.cmd.vsplit()
 			win = vim.api.nvim_get_current_win()
 			vim.t.mssql_results_win = win
 		end

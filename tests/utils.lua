@@ -94,7 +94,7 @@ M.get_completion_items = function()
 	-- Completion results are async
 	utils.defer_async(100)
 	local items = vim.fn.complete_info({ "items" }).items or {}
-	vim.cmd("stopinsert")
+	vim.cmd.stopinsert()
 
 	return vim.tbl_map(function(item)
 		return item.word or item.abbr
