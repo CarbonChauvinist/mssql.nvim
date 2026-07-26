@@ -1,7 +1,75 @@
 -- Handles how the user user interfaces with this plugin, i.e. keymaps and user commands
 local query_manager_module = require("mssql.query_manager")
-local utils = require("mssql.utils")
 local state = require("mssql.state")
+
+---Maps query manager state & buffer context to available action keys
+---@param qm MssqlQueryManager?
+---@param is_results_buf boolean
+---@param mode "n"|"v"
+---@return string[] action_keys
+local get_available_actions = function(qm, is_results_buf, mode)
+	if mode == "v" then
+		if qm and qm:get_state() == query_manager_module.states.connected then
+			return { "execute_query" }
+		end
+		return {}
+	end
+
+	if is_results_buf then
+		return { "save_query_results", "new_query", "new_default_query", "edit_connections" }
+	end
+
+	if not qm then
+		return { "new_query", "new_default_query", "edit_connections" }
+	end
+
+	local curr_state = qm:get_state()
+	local states = query_manager_module.states
+
+	if curr_state == states.connecting or curr_state == states.cancelling then
+		return { "new_query", "new_default_query", "edit_connections" }
+	elseif curr_state == states.executing then
+		return { "new_query", "new_default_query", "edit_connections", "cancel_query" }
+	elseif curr_state == states.connected then
+		return {
+			"new_query",
+			"new_default_query",
+			"edit_connections",
+			"refresh_intellisense",
+			"refresh_explorer_cache",
+			"execute_query",
+			"disconnect",
+			"switch_database",
+			"backup_database",
+			"restore_database",
+			"find_object",
+			"find_object_server",
+		}
+	elseif curr_state == states.disconnected then
+		return { "new_query", "new_default_query", "edit_connections", "connect", "execute_on_default" }
+	end
+
+	return { "new_query", "new_default_query", "edit_connections" }
+end
+
+local action_to_user_command = {
+	new_query = "NewQuery",
+	new_default_query = "NewDefaultQuery",
+	edit_connections = "EditConnections",
+	connect = "Connect",
+	disconnect = "Disconnect",
+	cancel_query = "CancelQuery",
+	execute_query = "ExecuteQuery",
+	execute_on_default = "ExecuteQuery",
+	refresh_intellisense = "RefreshIntelliSense",
+	refresh_explorer_cache = "RefreshExplorerCache",
+	switch_database = "SwitchDatabase",
+	save_query_results = "SaveQueryResults",
+	backup_database = "BackupDatabase",
+	restore_database = "RestoreDatabase",
+	find_object = "Find",
+	find_object_server = "FindServer",
+}
 
 return {
 	---@param prefix string
@@ -22,6 +90,25 @@ return {
 				desc = "Execute Query",
 				mode = { "n", "v" },
 				icon = { icon = "", color = "green" },
+			},
+			execute_on_default = {
+				"x",
+				M.execute_query,
+				desc = "Execute on Default",
+				mode = { "n", "v" },
+				icon = { icon = "", color = "green" },
+			},
+			switch_database = {
+				"s",
+				M.switch_database,
+				desc = "Switch Database",
+				icon = { icon = "", color = "yellow" },
+			},
+			save_query_results = {
+				"s",
+				M.save_query_results,
+				desc = "Save Query Results",
+				icon = { icon = "", color = "green" },
 			},
 			edit_connections = {
 				"e",
@@ -119,76 +206,8 @@ return {
 
 			local normal_group = vim.tbl_deep_extend("keep", wkeygroup, {})
 			normal_group.expand = function()
-				local qm = state.get_query_manager()
-				if qm then
-					local curr_state = qm:get_state()
-					local states = query_manager_module.states
-					if curr_state == states.connecting then
-						return {
-							keymaps.new_query,
-							keymaps.new_default_query,
-							keymaps.edit_connections,
-						}
-					elseif curr_state == states.executing then
-						return {
-							keymaps.new_query,
-							keymaps.new_default_query,
-							keymaps.edit_connections,
-							keymaps.cancel_query,
-						}
-					elseif curr_state == states.connected then
-						return {
-							keymaps.new_query,
-							keymaps.new_default_query,
-							keymaps.edit_connections,
-							keymaps.refresh_intellisense,
-							keymaps.refresh_explorer_cache,
-							keymaps.execute_query,
-							keymaps.disconnect,
-							{
-								"s",
-								M.switch_database,
-								desc = "Switch Database",
-								icon = { icon = "", color = "yellow" },
-							},
-							keymaps.find_object,
-						}
-					elseif curr_state == states.disconnected then
-						return {
-							keymaps.new_query,
-							keymaps.new_default_query,
-							keymaps.edit_connections,
-							keymaps.connect,
-							{
-								"x",
-								M.execute_query,
-								desc = "Execute On Default",
-								mode = { "n", "v" },
-								icon = { icon = "", color = "green" },
-							},
-						}
-					elseif curr_state == states.cancelling then
-						return {
-							keymaps.new_query,
-							keymaps.new_default_query,
-							keymaps.edit_connections,
-						}
-					else
-						utils.log_error("Entered unrecognised query state: " .. curr_state)
-						return {}
-					end
-				elseif vim.b.query_result_info then
-					local save_result = {
-						"s",
-						M.save_query_results,
-						desc = "Save Query Results",
-						icon = { icon = "", color = "green" },
-					}
-
-					return { save_result, keymaps.new_query, keymaps.new_default_query, keymaps.edit_connections }
-				else
-					return { keymaps.new_query, keymaps.new_default_query, keymaps.edit_connections }
-				end
+				local action_keys = get_available_actions(state.get_query_manager(), vim.b.query_result_info ~= nil, "n")
+				return vim.tbl_map(function(k) return keymaps[k] end, action_keys)
 			end
 
 			wk.add(normal_group)
@@ -196,21 +215,8 @@ return {
 			local visual_group = vim.tbl_deep_extend("keep", wkeygroup, {})
 			visual_group.mode = "v"
 			visual_group.expand = function()
-				local qm = state.get_query_manager()
-				if not qm then
-					return { keymaps.new_query, keymaps.new_default_query, keymaps.edit_connections }
-				end
-
-				local state = qm:get_state()
-				local states = query_manager_module.states
-				if state == states.connecting or state == states.executing or state == states.disconnected then
-					return {}
-				elseif state == states.connected then
-					return { keymaps.execute_query }
-				else
-					utils.log_error("Entered unrecognised query state: " .. state)
-					return {}
-				end
+				local action_keys = get_available_actions(state.get_query_manager(), false, "v")
+				return vim.tbl_map(function(k) return keymaps[k] end, action_keys)
 			end
 
 			wk.add(visual_group)
@@ -282,67 +288,13 @@ return {
 			end
 
 			local qm = state.get_query_manager()
-			if vim.b.query_result_info then
-				return {
-					"NewQuery",
-					"NewDefaultQuery",
-					"EditConnections",
-					"SaveQueryResults",
-				}
-			elseif not qm then
-				return {
-					"NewQuery",
-					"NewDefaultQuery",
-					"EditConnections",
-				}
-			end
-
-			local curr_state = qm:get_state()
-			local states = query_manager_module.states
-			if curr_state == states.connecting then
-				return {
-					"NewQuery",
-					"NewDefaultQuery",
-					"EditConnections",
-				}
-			elseif curr_state == states.executing then
-				return {
-					"NewQuery",
-					"NewDefaultQuery",
-					"EditConnections",
-					"CancelQuery",
-				}
-			elseif curr_state == states.connected then
-				return {
-					"NewQuery",
-					"NewDefaultQuery",
-					"EditConnections",
-					"RefreshIntelliSense",
-					"RefreshExplorerCache",
-					"ExecuteQuery",
-					"Disconnect",
-					"SwitchDatabase",
-					"BackupDatabase",
-					"RestoreDatabase",
-					"Find",
-					"FindServer",
-				}
-			elseif curr_state == states.disconnected then
-				return {
-					"NewQuery",
-					"NewDefaultQuery",
-					"EditConnections",
-					"Connect",
-				}
-			elseif curr_state == states.cancelling then
-				return {
-					"NewQuery",
-					"NewDefaultQuery",
-					"EditConnections",
-				}
-			else
-				utils.log_error("Entered unrecognised query state: " .. curr_state)
-				return {}
+			local action_keys = get_available_actions(qm, vim.b.query_result_info ~= nil, "n")
+			local cmds = {}
+			for _, key in ipairs(action_keys) do
+				local cmd_name = action_to_user_command[key]
+				if cmd_name and not vim.list_contains(cmds, cmd_name) then
+					table.insert(cmds, cmd_name)
+				end
 			end
 		end
 
