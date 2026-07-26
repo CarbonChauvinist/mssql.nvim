@@ -256,7 +256,7 @@ M.find_async = function(connection_options, lsp_client, opts)
 		items_to_show = vim.tbl_filter(function(node)
 			local short_code = explorer.OBJECT_TYPE_MAP[node.objectType]
 			return short_code == opts.object_type
-		end, explorer.get_cache())
+		end, cache)
 	end
 
 	local item, intent = pick_item_async(items_to_show, title)
