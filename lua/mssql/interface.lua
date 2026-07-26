@@ -141,7 +141,8 @@ return {
 							keymaps.new_query,
 							keymaps.new_default_query,
 							keymaps.edit_connections,
-							keymaps.refresh_cache,
+							keymaps.refresh_intellisense,
+							keymaps.refresh_explorer_cache,
 							keymaps.execute_query,
 							keymaps.disconnect,
 							{
