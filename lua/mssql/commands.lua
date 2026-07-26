@@ -197,7 +197,7 @@ M.switch_database_async = function(bufnr)
 
 	if err then
 		error("Error listing databases: " .. err.message, 0)
-	elseif not (result or result.databaseNames) then
+	elseif not (result and result.databaseNames) then
 		error("Could not list databases", 0)
 	end
 
