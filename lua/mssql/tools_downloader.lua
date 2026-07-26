@@ -128,7 +128,7 @@ M.download_tools_async = function(url, data_folder)
 			string.format(
 				[[
           set -e
-          curl -L "%s" -o "%s"
+          curl -sSL --fail "%s" -o "%s"
 		  %s
           rm -rf "%s"
           mkdir "%s"
@@ -150,23 +150,31 @@ M.download_tools_async = function(url, data_folder)
 	utils.log_info("Downloading sql tools...")
 
 	local co = coroutine.running()
+	local stderr_lines = {}
+
 	vim.fn.jobstart(download_job, {
 		on_exit = function(_, code)
 			if code ~= 0 then
-				utils.log_error("Sql tools download error: exit code " .. code)
+				local err_msg = "Sql tools download failed with exit code " .. code
+				if #stderr_lines > 0 then
+					err_msg = err_msg .. ": " .. table.concat(stderr_lines, "\n")
+				end
+				utils.log_error(err_msg)
+				utils.try_resume(co, false, err_msg)
 			else
 				utils.log_info("Downloaded successfully")
-				coroutine.resume(co)
+				utils.try_resume(co, true, nil)
 			end
 		end,
 		stderr_buffered = true,
 		on_stderr = function(_, data)
-			if data and data[1] ~= "" then
-				utils.log_error("Sql tools download error: " .. table.concat(data, "\n"))
-			end
+			if data then vim.list_extend(stderr_lines, data) end
 		end,
 	})
-	coroutine.yield()
+	local success, err = coroutine.yield()
+	if not success then
+		error(err or "Failed to download SQL tools", 0)
+	end
 end
 
 return M
