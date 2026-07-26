@@ -128,10 +128,17 @@ end
 ---@return any
 ---@return lsp.ResponseError?
 M.lsp_request_async = function(client, method, params)
-	local this = coroutine.running()
-	client:request(method, params, function(err, result, _, _)
-		M.try_resume(this, result, err)
+	if not client or client._is_stopping or (client.is_stopped and client:is_stopped()) then
+		return nil, { message = "LSP client is disconnected or stopping" }
+	end
+
+	local cr = coroutine.running()
+	local ok = client:request(method, params, function(err, result, _, _)
+		M.try_resume(cr, result, err)
 	end)
+	if ok == false then
+		return nil, { message = "Failed to send LSP request: client is inactive" }
+	end
 	return coroutine.yield()
 end
 
