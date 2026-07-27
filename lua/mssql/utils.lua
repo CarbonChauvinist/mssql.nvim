@@ -211,13 +211,13 @@ end
 
 ---Waits for specific notification from the LSP via the Global Router.
 ---Must be run inside a coroutine.
----@param _bufnr integer
+---@param bufnr integer
 ---@param client vim.lsp.Client
 ---@param method string
 ---@param timeout_ms? integer
 ---@return any result
 ---@return lsp.ResponseError? error
-M.wait_for_notification_async = function(_bufnr, client, method, timeout_ms)
+M.wait_for_notification_async = function(bufnr, client, method, timeout_ms)
 	if not timeout_ms and method ~= "query/complete" then
 		timeout_ms = 10000
 	end
@@ -225,13 +225,13 @@ M.wait_for_notification_async = function(_bufnr, client, method, timeout_ms)
 	local co = coroutine.running()
 	local resumed = false
 
-	state.register_waiting_coroutine(_bufnr, method, co)
+	state.register_waiting_coroutine(bufnr, method, co)
 
 	if timeout_ms then
 		vim.defer_fn(function()
 			if not resumed then
 				resumed = true
-				state.clear_waiting_coroutine(_bufnr, method)
+				state.clear_waiting_coroutine(bufnr, method)
 				M.try_resume(co, nil, {
 					code = -32001, -- timeout code
 					message = "Waiting for " .. method .. " timed out"
@@ -241,6 +241,7 @@ M.wait_for_notification_async = function(_bufnr, client, method, timeout_ms)
 	end
 
 	local result, err = coroutine.yield()
+	state.clear_waiting_coroutine(bufnr, method)
 	resumed = true
 	return result, err
 end
