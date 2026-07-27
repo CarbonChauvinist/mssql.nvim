@@ -185,7 +185,7 @@ M.refresh_intellisense = function(bufnr)
 
 	if client then
 		state.set_intellisense_ready(client.id, false)
-		vim.cmd.redrawstatus()
+		utils.request_redrawstatus()
 	end
 
 	local success, msg = pcall(function()
@@ -215,12 +215,12 @@ M.refresh_explorer_cache = function(bufnr)
 		return
 	end
 	ui.set_caching_status(true)
-	vim.cmd.redrawstatus()
+	utils.request_redrawstatus()
 	utils.log_info("Refreshing Object Explorer cache...")
 	coroutine.resume(coroutine.create(function()
 		local success = qm:initialise_explorer_cache_async({ force = true, is_background = false })
 		ui.set_caching_status(false)
-		vim.cmd.redrawstatus()
+		utils.request_redrawstatus()
 		if success then
 			utils.log_info("Object Explorer cache refreshed")
 		end
@@ -340,13 +340,13 @@ M.find_object = utils.async(function(opts)
 
 	if qm:is_refreshing() then
 		ui.set_caching_status(true)
-		vim.cmd.redrawstatus()
+		utils.request_redrawstatus()
 		utils.log_error("Still caching. Try again in a few seconds...")
 		return
 	end
 
 	ui.set_caching_status(false)
-	vim.cmd.redrawstatus()
+	utils.request_redrawstatus()
 	local curr_conf = get_config_or_warn()
 	if not curr_conf then return end
 
@@ -354,12 +354,12 @@ M.find_object = utils.async(function(opts)
 	-- this ensures if we just switched databases we build a new cache
 	-- instead of showing an empty picker
 	ui.set_caching_status(true)
-	vim.cmd.redrawstatus()
+	utils.request_redrawstatus()
 
 	local success = qm:initialise_explorer_cache_async({ scope = scope, is_background = false })
 
 	ui.set_caching_status(false)
-	vim.cmd.redrawstatus()
+	utils.request_redrawstatus()
 
 	if not success then return end
 

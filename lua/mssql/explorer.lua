@@ -534,7 +534,7 @@ M.initialise_explorer_cache_async = function(lsp_client, conn_opts, opts)
 	global_cache[key].cancellation_token = cancellation_token
 
 	global_cache[key].refresh_coroutine = coroutine.running()
-	vim.cmd.redrawstatus()
+	utils.request_redrawstatus()
 	local new_cache, err = get_object_cache_async(
 		lsp_client,
 		conn_opts,

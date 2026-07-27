@@ -545,4 +545,11 @@ M.async = function(fn)
 	end
 end
 
+--- Simple helper with goal to batch potential multiple redraws into single UI frame update
+M.request_redrawstatus = function()
+	vim.schedule(function()
+		vim.cmd.redrawstatus()
+	end)
+end
+
 return M

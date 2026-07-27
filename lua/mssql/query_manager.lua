@@ -117,7 +117,7 @@ end
 function MssqlQueryManager:set_intellisense_ready(is_ready)
 	if is_ready == nil then is_ready = true end
 	self.intellisense_ready = is_ready
-	vim.cmd.redrawstatus()
+	utils.request_redrawstatus()
 end
 
 ---@return boolean
@@ -155,7 +155,7 @@ function MssqlQueryManager:set_state(new_state)
 	self.state = new_state
 	vim.schedule(function()
 		if self.bufnr and vim.api.nvim_buf_is_valid(self.bufnr) then
-			vim.cmd.redrawstatus()
+			utils.request_redrawstatus()
 		end
 	end)
 	return true
@@ -182,7 +182,7 @@ function MssqlQueryManager:stop_execution_timer()
 	self.start_time = 0
 	vim.schedule(function()
 		if self.bufnr and vim.api.nvim_buf_is_valid(self.bufnr) then
-			vim.cmd.redrawstatus()
+			utils.request_redrawstatus()
 		end
 	end)
 
@@ -208,7 +208,7 @@ function MssqlQueryManager:start_execution_timer()
 
 		if self.state == MssqlQueryManager.states.executing then
 			self.last_execution_info.elapsed_time = (vim.loop.now() - self.start_time) / 1000
-			vim.cmd.redrawstatus()
+			utils.request_redrawstatus()
 		else
 			self:stop_execution_timer()
 		end
@@ -310,7 +310,7 @@ function MssqlQueryManager:wait_for_query_completion()
 	)
 
 	self:stop_execution_timer()
-	vim.cmd.redrawstatus()
+	utils.request_redrawstatus()
 	if self.state == MssqlQueryManager.states.cancelling then
 		self:set_state(MssqlQueryManager.states.connected)
 		utils.log_info("Query was cancelled.")
