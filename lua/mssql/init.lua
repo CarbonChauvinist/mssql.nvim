@@ -9,6 +9,7 @@ local downloader = require("mssql.tools_downloader")
 local display_query_results = require("mssql.display_query_results")
 local autocmds = require("mssql.autocmds")
 local explorer = require("mssql.explorer")
+local query_manager_module = require("mssql.query_manager")
 
 local joinpath = vim.fs.joinpath
 local M = {}
@@ -28,6 +29,34 @@ local function get_config_or_warn()
 		return nil
 	end
 	return conf
+end
+
+---Normalizes buffer, validates plugin config, retrieves QM, and checks state.
+---@param bufnr? integer
+---@param required_state? MssqlQueryManagerState
+---@return MssqlOptions? config
+---@return MssqlQueryManager? qm
+---@return integer bufnr
+local resolve_session = function(bufnr, required_state)
+	bufnr = bufnr or vim.api.nvim_get_current_buf()
+
+	local conf = get_config_or_warn()
+	if not conf then
+		return nil, nil, bufnr
+	end
+
+	local qm = state.get_query_manager(bufnr)
+	if not qm then
+		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
+		return conf, nil, bufnr
+	end
+
+	if required_state and qm:get_state() ~= required_state then
+		utils.log_error("Must be " .. required_state .. ". Currently: " .. qm:get_state())
+		return conf, qm, bufnr
+	end
+
+	return conf, qm, bufnr
 end
 
 -- Asynchronous setup logic (downloading tools, etc.)
@@ -105,15 +134,11 @@ M.switch_database = utils.async(function(bufnr, callback)
 		callback = bufnr
 		bufnr = nil
 	end
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
 
-	local qm = state.get_query_manager(bufnr)
-	if not qm then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
-		return
-	end
+	local _, qm, buf = resolve_session(bufnr, query_manager_module.states.connected)
+	if not qm then return end
 
-	cmds.switch_database_async(bufnr)
+	cmds.switch_database_async(buf)
 	qm:initialise_explorer_cache_async({ is_background = true })
 	explorer.clean_cache()
 	if callback then callback() end
@@ -136,14 +161,8 @@ M.connect = utils.async(function(bufnr)
 		_ = lsp.wait_for_attach(bufnr)
 	end
 
-	local qm = state.get_query_manager(bufnr)
-	local curr_conf = get_config_or_warn()
-	if not curr_conf then return end
-
-	if not qm then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
-		return
-	end
+	local curr_conf, qm, _ = resolve_session(bufnr)
+	if not qm or not curr_conf then return end
 
 	local active_clients = vim.lsp.get_clients({ bufnr = bufnr, name = "mssql_ls" })
 	for _, c in ipairs(active_clients) do
@@ -170,12 +189,8 @@ end
 ---@overload fun(bufnr: integer)
 ---@param bufnr? integer
 M.refresh_intellisense = function(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local qm = state.get_query_manager(bufnr)
-	if not qm then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
-		return
-	end
+	local _, qm, buf = resolve_session(bufnr, query_manager_module.states.connected)
+	if not qm then return end
 	local client = qm:get_lsp_client()
 
 	if qm:get_state() ~= qm.states.connected then
@@ -190,7 +205,7 @@ M.refresh_intellisense = function(bufnr)
 
 	local success, msg = pcall(function()
 		---@diagnostic disable-next-line: param-type-mismatch
-		client:notify("textDocument/rebuildIntelliSense", { ownerUri = vim.uri_from_bufnr(bufnr) })
+		client:notify("textDocument/rebuildIntelliSense", { ownerUri = vim.uri_from_bufnr(buf) })
 	end)
 
 	if not success then utils.log_error(msg)
@@ -204,16 +219,8 @@ end
 ---@overload fun(bufnr: integer)
 ---@param bufnr? integer
 M.refresh_explorer_cache = function(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local qm = state.get_query_manager(bufnr)
-	if not qm then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
-		return
-	end
-	if qm:get_state() ~= qm.states.connected then
-		utils.log_error("To refresh Object Explorer you must be connected. You are currently: " .. qm:get_state())
-		return
-	end
+	local _, qm = resolve_session(bufnr, query_manager_module.states.connected)
+	if not qm then return end
 	ui.set_caching_status(true)
 	utils.request_redrawstatus()
 	utils.log_info("Refreshing Object Explorer cache...")
@@ -231,30 +238,21 @@ end
 ---@overload fun(bufnr: integer)
 ---@param bufnr? integer
 M.disconnect = utils.async(function(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local qm = state.get_query_manager(bufnr)
-	if not qm then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
-		return
-	end
+	local _, qm = resolve_session(bufnr)
+	if not qm then return end
 
 	qm:disconnect_async()
 	explorer.clean_cache()
 end)
 
----@param opts? MssqlExecuteOptions
+---@param opts? MssqlExecutionOptions
 M.execute_query = utils.async(function(opts)
 	opts = opts or {}
 
-	local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
 	local rerun = opts.rerun_last == true
 
-	local qm = state.get_query_manager(bufnr)
-	if not qm then
-		utils.log_error("No mssql lsp is attached. Create a new query or open an existing one.")
-		return
-	end
-
+	local curr_conf, qm, bufnr = resolve_session(opts.bufnr, query_manager_module.states.connected)
+	if not qm or not curr_conf then return end
 	local query
 
 	if rerun then
@@ -281,13 +279,6 @@ M.execute_query = utils.async(function(opts)
 		end
 	else
 		query = utils.get_selected_text(bufnr)
-	end
-
-	local curr_conf = get_config_or_warn()
-	if not curr_conf then return end
-	if qm:get_state() == qm.states.disconnected then
-		utils.log_error("Please connect first.")
-		return
 	end
 
 	ui.clear_message_buffer()
@@ -327,16 +318,10 @@ M.find_object = utils.async(function(opts)
 	opts = opts or {}
 	local scope = utils.normalize_findobject_scope(opts.scope)
 	local object_type = opts.object_type
-	local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
 	local callback = opts.callback
 
-	local qm = state.get_query_manager(bufnr)
-	if not qm then return end
-
-	if qm:get_state() ~= qm.states.connected then
-		utils.log_error("You are currently " .. qm:get_state())
-		return
-	end
+	local curr_conf, qm, _bufnr = resolve_session(opts.bufnr, query_manager_module.states.connected)
+	if not qm or not curr_conf then return end
 
 	if qm:is_refreshing() then
 		ui.set_caching_status(true)
@@ -347,8 +332,6 @@ M.find_object = utils.async(function(opts)
 
 	ui.set_caching_status(false)
 	utils.request_redrawstatus()
-	local curr_conf = get_config_or_warn()
-	if not curr_conf then return end
 
 	-- explicitly initialise cache for "database" scope
 	-- this ensures if we just switched databases we build a new cache
