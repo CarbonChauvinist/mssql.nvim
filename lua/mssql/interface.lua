@@ -16,57 +16,50 @@ local get_available_actions = function(qm, is_results_buf, mode)
 	end
 
 	if is_results_buf then
-		return { "save_query_results", "new_query", "new_default_query", "edit_connections" }
+		return { "save_query_results", "new_query", "edit_connections" }
 	end
 
 	if not qm then
-		return { "new_query", "new_default_query", "edit_connections" }
+		return { "new_query", "edit_connections" }
 	end
 
 	local curr_state = qm:get_state()
 	local states = query_manager_module.states
 
 	if curr_state == states.connecting or curr_state == states.cancelling then
-		return { "new_query", "new_default_query", "edit_connections" }
+		return { "new_query", "edit_connections" }
 	elseif curr_state == states.executing then
-		return { "new_query", "new_default_query", "edit_connections", "cancel_query" }
+		return { "new_query", "edit_connections", "cancel_query" }
 	elseif curr_state == states.connected then
 		return {
 			"new_query",
-			"new_default_query",
 			"edit_connections",
 			"refresh_intellisense",
 			"refresh_explorer_cache",
 			"execute_query",
 			"disconnect",
 			"switch_database",
-			"backup_database",
-			"restore_database",
 			"find_object",
 			"find_object_server",
 		}
 	elseif curr_state == states.disconnected then
-		return { "new_query", "new_default_query", "edit_connections", "connect", "execute_on_default" }
+		return { "new_query", "edit_connections", "connect" }
 	end
 
-	return { "new_query", "new_default_query", "edit_connections" }
+	return { "new_query", "edit_connections" }
 end
 
 local action_to_user_command = {
 	new_query = "NewQuery",
-	new_default_query = "NewDefaultQuery",
 	edit_connections = "EditConnections",
 	connect = "Connect",
 	disconnect = "Disconnect",
 	cancel_query = "CancelQuery",
 	execute_query = "ExecuteQuery",
-	execute_on_default = "ExecuteQuery",
 	refresh_intellisense = "RefreshIntelliSense",
 	refresh_explorer_cache = "RefreshExplorerCache",
 	switch_database = "SwitchDatabase",
 	save_query_results = "SaveQueryResults",
-	backup_database = "BackupDatabase",
-	restore_database = "RestoreDatabase",
 	find_object = "Find",
 	find_object_server = "FindServer",
 }
@@ -88,13 +81,6 @@ return {
 				"x",
 				M.execute_query,
 				desc = "Execute Query",
-				mode = { "n", "v" },
-				icon = { icon = "", color = "green" },
-			},
-			execute_on_default = {
-				"x",
-				M.execute_query,
-				desc = "Execute on Default",
 				mode = { "n", "v" },
 				icon = { icon = "", color = "green" },
 			},
@@ -127,12 +113,6 @@ return {
 				M.refresh_explorer_cache,
 				desc = "Refresh Object Explorer cache",
 				icon = { icon = "", color = "red" },
-			},
-			new_default_query = {
-				"d",
-				M.new_default_query,
-				desc = "New Default Query",
-				icon = { icon = "", color = "yellow" },
 			},
 			find_object = {
 				"f",
@@ -239,15 +219,12 @@ return {
 		local commands = {
 			Connect = M.connect,
 			Disconnect = M.disconnect,
-			BackupDatabase = M.backup_database,
-			RestoreDatabase = M.restore_database,
 			ExecuteQuery = M.execute_query,
 			RefreshIntelliSense = M.refresh_intellisense,
 			RefreshExplorerCache = M.refresh_explorer_cache,
 			EditConnections = M.edit_connections,
 			SwitchDatabase = M.switch_database,
 			NewQuery = M.new_query,
-			NewDefaultQuery = M.new_default_query,
 			SaveQueryResults = M.save_query_results,
 			CancelQuery = M.cancel_query,
 

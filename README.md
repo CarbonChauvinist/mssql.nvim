@@ -41,7 +41,6 @@ Lualine/other status line integration
 🍒 Other cherries on top:
 
 - Save query results to csv, json, Excel and xml
-- Backup to/restore from `.bak` files
 - Basic TSQL formatting
 
 ## Installation and setup
@@ -220,7 +219,7 @@ You can call the following as key maps typing your
 | ------- | ------------------ | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `n`     | `NewQuery`         | `new_query()`          | Open a new buffer for sql queries                                                                                                                                                 |
 | `c`     | `Connect`          | `connect()`            | Connect the current buffer (you'll be prompted to choose a connection)                                                                                                            |
-| `x`     | `ExecuteQuery`     | `execute_query()`      | Execute the selection, or the whole buffer. If you are disconnected, it will try to connect to the `default` connection in your `connections.json`.                               |
+| `x`     | `ExecuteQuery`     | `execute_query()`      | Execute the selection, or the whole buffer.                                |
 | `f`     | `Find`             | `find_object()`        | Find a table/view/stored procedure/function on connected database and generate a script                                                                                                                 |
 | `ft`     | `Find Table`             | `find_object({object_type = "t"})`        | Find a table on connected database and generate a script                                                                                                                 |
 | `fv`     | `Find View`             | `find_object({object_type = "v"})`        | Find a view on connected database and generate a script                                                                                                                 |
@@ -234,13 +233,10 @@ You can call the following as key maps typing your
 | `l`     | `CancelQuery`      | `cancel_query()`       | Cancel the currently running query.                                                                                                                                               |
 | `q`     | `Disconnect`       | `disconnect()`         | Disconnects the current buffer                                                                                                                                                    |
 | `s`     | `SwitchDatabase`   | `switch_database()`    | Prompts, then switches to a database that is on the currently connected server                                                                                                    |
-| `d`     | `NewDefaultQuery`  | `new_default_query()`  | Opens a new query and connects to the connection called `default` in your `connections.json`. Useful when combined with the `promptForDatabase` option in the `connections.json`. |
 | `s`     | `SaveQueryResults` | `save_query_results()` | When in a query result buffer, save the query result by giving a file path with an extension of `.csv`, `.json`, `.xml`, `.xlsx` or `.xls`                                        |
 | `r`     | `RefreshIntelliSense`     | `refresh_intellisense()`      | Rebuild the server-side intellisense autocomplete cache                                                                                                       |
 | `rf`     | `RefreshExplorerCache`     | `refresh_explorer_cache()`      | Rebuild the client-side object explorer cache                                                                                                       |
 | `e`     | `EditConnections`  | `edit_connections()`   | Open the [connections file](#connections-json-file) for editing                                                                                                                   |
-|         | `BackupDatabase`   | `backup_database()`    | Inserts an SQL command to back up the currently connected database                                                                                                                |
-|         | `RestoreDatabase`  | `restore_database()`   | Prompts for a `.bak` file, then inserts an SQL command to restore the database from that file                                                                                     |
 
 ## Connections json file
 

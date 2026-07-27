@@ -93,15 +93,6 @@ M.new_query = utils.async(function()
 		ui.new_query_async()
 	end)
 
--- Look for the connection called "default", prompt to choose a database in that server,
--- connect to that database and open a new buffer for querying (very useful!)
-M.new_default_query = utils.async(function()
-	local curr_conf = get_config_or_warn()
-	if not curr_conf then return end
-
-	cmds.new_default_query_async(curr_conf)
-end)
-
 --- Prompts for a database to switch to that is on the currently connected server.
 ---@overload fun()
 ---@overload fun(callback: fun())
@@ -315,27 +306,6 @@ M.cancel_query = utils.async(function(bufnr)
 	if qm then
 		qm:cancel_async()
 	end
-end)
-
-
-M.backup_database = utils.async(function(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local qm = state.get_query_manager(bufnr)
-	if not qm then return end
-
-	cmds.backup_database_async(qm)
-end)
-
-
----@overload fun()
----@overload fun(bufnr: integer)
----@param bufnr? integer
-M.restore_database = utils.async(function(bufnr)
-	bufnr = bufnr or vim.api.nvim_get_current_buf()
-	local qm = state.get_query_manager(bufnr)
-	if not qm then return end
-
-	cmds.restore_database_async(qm)
 end)
 
 ---@overload fun()

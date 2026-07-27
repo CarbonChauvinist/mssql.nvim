@@ -298,11 +298,8 @@
 ---@field edit_connections fun() Edit the connections.json file
 ---@field switch_database fun() Switch to a different database
 ---@field new_query fun() Open a query window
----@field new_default_query fun() Open a new query window using default connection
 ---@field save_query_results fun() Save the results of the last query
 ---@field cancel_query fun() Cancel the currently running query
----@field backup_database fun() Script a database backup
----@field restore_database fun() Script a database restore
 
 ---@class MssqlExecutionOptions
 ---@field rerun_last? boolean If true, return the last query selection instead of getting the current selection
