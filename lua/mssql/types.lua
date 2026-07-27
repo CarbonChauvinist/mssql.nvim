@@ -223,7 +223,7 @@
 ---@field start_execution_timer fun(self: MssqlQueryManager): boolean
 ---@field connect_async fun(self: MssqlQueryManager, connect_params: MssqlConnectParams): boolean, string?
 ---@field disconnect_async fun(self: MssqlQueryManager): boolean
----@field execute_async fun(self: MssqlQueryManager, query: string): MssqlQueryExecuteSubsetResult?, string?
+---@field execute_async fun(self: MssqlQueryManager, target: string|{ line: integer, column: integer }): MssqlQueryExecuteSubsetResult?, string?
 ---@field wait_for_query_completion fun(self: MssqlQueryManager): MssqlQueryExecuteSubsetResult?, string?
 ---@field handle_timeout fun(self: MssqlQueryManager, timeout_ms?: integer): string
 ---@field cancel_async fun(self: MssqlQueryManager): boolean
@@ -290,7 +290,9 @@
 ---@field setup fun(opts?: MssqlConfig) Setup the plugin
 ---@field connect fun() Connect to a database
 ---@field disconnect fun() Disconnect the current session
----@field execute_query fun() Execute the query under the cursor or selection
+---@field execute_query fun(opts?: MssqlExecutionOptions): MssqlQueryExecuteSubsetResult? string? Execute the query under the cursor or selection
+---@field execute_current_statement fun(opts?: MssqlExecutionOptions): MssqlQueryExecuteSubsetResult? string? Execute the statement under the current cursor
+---@field execute_last_query fun(opts?: MssqlExecutionOptions): MssqlQueryExecuteSubsetResult? string? Execute the query from the last visual selection
 ---@field find_object fun(opts?: FindObjectOpts) Find objects (tables, views, etc.)
 ---@field refresh_cache fun() Refresh both the IntelliSense and Object Explorer caches
 ---@field refresh_intellisense fun() Refresh only the Intellisense cache
@@ -305,6 +307,8 @@
 ---@field rerun_last? boolean If true, return the last query selection instead of getting the current selection
 ---@field highlight? boolean If true, re-highlight the last selection when rerunning
 ---@field buffer_only? boolean If true, execute entire buffer instead of current selection
+---@field current_statement? boolean If true, executes the current statement based on cursor position
+---@field bufnr? integer
 
 ---@class GetResultsBufferOpts
 ---@field all? boolean Return all matching buffers if true.

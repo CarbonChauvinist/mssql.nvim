@@ -17,7 +17,7 @@ return {
 				local mock_client = mssql_utils.get_lsp_client()
 				local qm = query_manager.new(buf, mock_client, { query_timeout = 5})
 				qm.state = qm.states.connected
-				local result, err_msg = qm:execute_async("SELECT 1")
+				local result, err_msg = qm:execute_async({ query = "SELECT 1" })
 
 				assert(result == nil, "Result should be nil on error")
 				assert(type(err_msg) == "string", "Should return error string")

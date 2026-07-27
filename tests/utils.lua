@@ -482,11 +482,12 @@ M.wait_for_lsp_attach = function(buf, opts)
 end
 
 --- Creates a SQL buffer AND waits for the LSP.
+---@param buffer_name? string Desired buffer name
 ---@return integer bufnr The new, active buffer number.
 ---@return vim.lsp.Client client The attached LSP client.
 ---@return function cleanup A function to delete the buffer.
-M.create_lsp_buffer_async = function()
-	local buf, cleanup_buffer = M.create_sql_buffer()
+M.create_lsp_buffer_async = function(buffer_name)
+	local buf, cleanup_buffer = M.create_sql_buffer({ buffer_name = buffer_name })
 	local client = M.wait_for_lsp_attach(buf)
 
 	return buf, client, cleanup_buffer

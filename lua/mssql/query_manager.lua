@@ -273,10 +273,11 @@ function MssqlQueryManager:disconnect_async()
 end
 
 --- Executes an SQL query string.
----@param query string
+---@param opts? { query?: string, line?: integer, column?: integer }
 ---@return MssqlQueryExecuteSubsetResult? result The query result object.
 ---@return string? error_message
-function MssqlQueryManager:execute_async(query)
+function MssqlQueryManager:execute_async(opts)
+	opts = opts or {}
 	if not self:is_valid() then return nil, "Object is invalid." end
 	if not self:set_state(MssqlQueryManager.states.executing) then
 		return nil, "Cannot transition to executing state"
@@ -286,10 +287,23 @@ function MssqlQueryManager:execute_async(query)
 		return nil, "Failed to start execution timer"
 	end
 
-	local result, err = utils.lsp_request_async(self.client, "query/executeString", {
-		query = query,
-		ownerUri = self:get_owner_uri()
-	})
+	local method, params
+	if opts.line and opts.column then
+		method = "query/executedocumentstatement"
+		params = {
+			ownerUri = self:get_owner_uri(),
+			line = opts.line,
+			column = opts.column,
+		}
+	elseif opts.query then
+		method = "query/executeString"
+		params = {
+			ownerUri = self:get_owner_uri(),
+			query = opts.query
+		}
+	end
+
+	local result, err = utils.lsp_request_async(self.client, method, params)
 
 	if err or utils.is_empty(result) then
 		self:stop_execution_timer()

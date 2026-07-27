@@ -219,7 +219,9 @@ You can call the following as key maps typing your
 | ------- | ------------------ | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `n`     | `NewQuery`         | `new_query()`          | Open a new buffer for sql queries                                                                                                                                                 |
 | `c`     | `Connect`          | `connect()`            | Connect the current buffer (you'll be prompted to choose a connection)                                                                                                            |
-| `x`     | `ExecuteQuery`     | `execute_query()`      | Execute the selection, or the whole buffer.                                |
+| `x`     | `ExecuteQuery`     | `execute_query()`      | Execute visual selection or full buffer.                                |
+| `xs`     | `ExecuteCurrentStatement`     | `execute_current_statement()`      | Execute single SQL statement under cursor.                                |
+| `xl`     | `ExecuteRerunLast`     | `execute_query({ rerun_last = true })`      | Rerun last executed query selection.                                |
 | `f`     | `Find`             | `find_object()`        | Find a table/view/stored procedure/function on connected database and generate a script                                                                                                                 |
 | `ft`     | `Find Table`             | `find_object({object_type = "t"})`        | Find a table on connected database and generate a script                                                                                                                 |
 | `fv`     | `Find View`             | `find_object({object_type = "v"})`        | Find a view on connected database and generate a script                                                                                                                 |

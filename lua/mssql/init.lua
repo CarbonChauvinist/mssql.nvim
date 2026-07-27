@@ -248,14 +248,19 @@ end)
 ---@param opts? MssqlExecutionOptions
 M.execute_query = utils.async(function(opts)
 	opts = opts or {}
+	local opts_bufnr = opts.bufnr and opts.bufnr or nil
 
-	local rerun = opts.rerun_last == true
-
-	local curr_conf, qm, bufnr = resolve_session(opts.bufnr, query_manager_module.states.connected)
+	local curr_conf, qm, bufnr = resolve_session(opts_bufnr, query_manager_module.states.connected)
 	if not qm or not curr_conf then return end
-	local query
 
-	if rerun then
+	ui.clear_message_buffer()
+	local result, query, line, column
+
+	if opts.current_statement then
+		local cursor = vim.api.nvim_win_get_cursor(0)
+		line = cursor[1] - 1
+		column = cursor[2]
+	elseif opts.rerun_last then
 		if not state.is_last_query_extmarks_valid() then
 			utils.log_error("No valid previous query selection found to rerun.")
 			return
@@ -265,8 +270,10 @@ M.execute_query = utils.async(function(opts)
 			utils.log_error("No previous query range found.")
 			return
 		end
+
 		local lines = vim.fn.getregion(range.start, range.end_, { mode = "v"})
 		query = table.concat(lines, "\n")
+
 		if not query or query == "" then
 			utils.log_error("No text found in previous selection range.")
 			return
@@ -277,15 +284,22 @@ M.execute_query = utils.async(function(opts)
 			vim.fn.setpos("'>", range.end_)
 			vim.cmd.normal("gv")
 		end
-	else
+	elseif not opts.current_statement and not opts.rerun_last then
 		query = utils.get_selected_text(bufnr)
 	end
 
-	ui.clear_message_buffer()
-	local result = qm:execute_async(query)
-	if result then -- since cancelled query returns nil, have to check for nil before displaying
+	result = qm:execute_async({ query = query, line = line, column = column })
+	if result then
 		display_query_results.display_query_results(curr_conf, result)
 	end
+end)
+
+---Executes the SQL statement under the cursor in the current buffer
+---@param opts? MssqlExecutionOptions
+M.execute_current_statement = utils.async(function(opts)
+	opts = opts or {}
+	opts.current_statement = true
+	M.execute_query(opts)
 end)
 
 ---@overload fun()
@@ -357,7 +371,7 @@ M.find_object = utils.async(function(opts)
 
 	if curr_conf.execute_generated_select_statements and item.select then
 		ui.clear_message_buffer()
-		local result, err = qm:execute_async(item.script)
+		local result, err = qm:execute_async({ query = item.script })
 
 		if result then
 			display_query_results.display_query_results(curr_conf, result)
