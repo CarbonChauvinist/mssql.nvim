@@ -42,6 +42,7 @@ function MssqlQueryManager.new(bufnr, client, opts)
 	self.intellisense_ready = false
 	self.result_buffers = {}
 	self.reconnect_token = nil
+	self.owner_uri = vim.uri_from_bufnr(bufnr) or ""
 
 	local attached = vim.api.nvim_buf_attach(bufnr, false, {
 		on_detach = function()
@@ -256,6 +257,7 @@ function MssqlQueryManager:connect_async(connect_params)
 	end
 
 	self.last_connect_params = connect_params
+	self.owner_uri = self:get_owner_uri()
 	return self:set_state(MssqlQueryManager.states.connected)
 end
 
@@ -474,6 +476,30 @@ function MssqlQueryManager:connectionchanged_async(result)
 		utils.log_info("Database changed. Updating IntelliSense...")
 		self:initialise_explorer_cache_async({ is_background = true })
 	end
+end
+
+--- Notifies SQL Tools Service that the document URI has changed.
+---@return boolean success
+function MssqlQueryManager:change_uri_async()
+	local client = self:get_lsp_client()
+	if not client or self:get_state() ~= MssqlQueryManager.states.connected then
+		return false
+	end
+
+	local old_uri = self.owner_uri
+	local new_uri = self:get_owner_uri()
+
+	if not old_uri or old_uri == "" or old_uri == new_uri then
+		return false
+	end
+
+	client:notify("query/connectionUriChanged", {
+		originalOwnerUri = old_uri,
+		newOwnerUri = new_uri,
+	})
+
+	self.owner_uri = new_uri
+	return true
 end
 
 -- Passthroughs to Finder (passing client/params explicility)

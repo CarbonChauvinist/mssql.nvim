@@ -9,24 +9,25 @@ return {
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { query })
 
 		local temp_file = vim.fn.tempname() .. ".sql"
-		vim.api.nvim_cmd({ cmd = "saveas", args = { temp_file }, bang = true, mods = { silent = true } }, {})
+		vim.cmd.saveas({ args = { temp_file }, bang = true, mods = { silent = true } })
+
+		-- reload buffer from disk via :edit!
 		vim.cmd.edit({ bang = true })
 
+		-- :edit! triggers on_detach (disconnected) --> LspAttach (reconnects)
 		local first_disconnects = test_utils.poll(function()
 			return qm:get_state() ~= qm.states.connected
 		end)
-		assert(first_disconnects, "Need to disconnect first")
+		assert(first_disconnects, "Need to disconnect first on buffer detach")
 
 		local then_reconnects = test_utils.poll(function()
 			return qm:get_state() == qm.states.connected
 		end, { timeout_ms = 15000 })
-		assert(then_reconnects, "QueryManager did not reconnect after :edit")
+		assert(then_reconnects, "QueryManager did not reconnect after :edit!")
 
-		vim.wait(1000)
 		mssql.execute_query({ bufnr = buf })
 		local res_buf, status, results = test_utils.res_buf_catcher()
-		if not status then error("Results buffer verify failed. Last QM State: " .. tostring(qm:get_state())) end
-		assert(results:find("Merc"), "Query results verification failed after reload. Content: " .. tostring(results))
+		assert(status and results:find("Merc"), "Query results verification failed after reload. Content: " .. tostring(results))
 
 		test_utils.cleanup_results_buffer(res_buf)
 		cleanup()

@@ -52,9 +52,6 @@ local M = {
 	-- Automatically initialize the Object Explorer cache on connection setup
 	auto_init_explorer = false,
 
-	-- Automatically re-establish the connection when a buffer is renamed (e.g. :saveas)
-	auto_connect_on_rename = true,
-
 	-- When choosing a table/view in the finder, immediately execute the generated SELECT statement
 	execute_generated_select_statements = true,
 

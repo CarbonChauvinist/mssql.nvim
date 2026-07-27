@@ -285,10 +285,12 @@ M.enable = function()
 			else
 				-- existing buffer reloaded (i.e. ':edit')
 				qm.client = client
-				local params = qm:get_connect_params()
-				if params and params.connection and params.connection.options then
-					local success, err = utils.reconnect_session(qm, "Session reloaded")
-					if not success then utils.log_error(err) end
+				if qm:get_state() ~= qm.states.connected then
+					local params = qm:get_connect_params()
+					if params and params.connection and params.connection.options then
+						local success, err = utils.reconnect_session(qm, "Session reloaded")
+						if not success then utils.log_error(err) end
+					end
 				end
 			end
 		end,

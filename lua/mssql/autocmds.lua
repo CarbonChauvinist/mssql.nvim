@@ -1,5 +1,4 @@
 local state = require("mssql.state")
-local utils = require("mssql.utils")
 local explorer = require("mssql.explorer")
 
 local M = {}
@@ -14,18 +13,14 @@ M.setup = function(opts)
 		pattern = "*.sql",
 		callback = function(args)
 			local buf = args.buf
-			if vim.b[buf].is_temp_name then
-				vim.api.nvim_buf_set_name(buf, vim.fn.expand("<afile>:p"))
-				vim.b[buf].is_temp_name = nil
+			local qm = state.get_query_manager(buf)
 
-				local qm = state.get_query_manager(buf)
-				local current_conf = state.get_config()
-				if qm and qm:get_state() == qm.states.connected and current_conf and current_conf.auto_connect_on_rename then
-					local success, err = utils.reconnect_session(qm, "Buffer renamed")
-					if not success then
-						utils.log_error(err)
-					end
+			if qm then
+				if vim.b[buf].is_temp_name then
+					vim.api.nvim_buf_set_name(buf, vim.fn.expand("<afile>:p"))
+					vim.b[buf].is_temp_name = nil
 				end
+				qm:change_uri_async()
 			end
 		end,
 	})

@@ -84,7 +84,6 @@
 ---@field object_explorer_timeouts { server: integer, database: integer }?
 ---@field explorer_categories ("tables"|"views"|"stored_procedures"|"functions")[]? List of database object categories to scan in the explorer.
 ---@field auto_init_explorer boolean? Automatically populate the object cache on connection (default false).
----@field auto_connect_on_rename boolean? Automatically re-establish the connection when a buffer is renamed (default true).
 ---@field execute_generated_select_statements boolean? Auto-execute SELECTs from finder.
 ---@field lsp_settings table? Settings passed to mssql language server.
 ---@field sql_buffer_options table<string, any>? Vim options for SQL buffers.
@@ -111,7 +110,6 @@
 ---@field object_explorer_timeouts { server: integer, database: integer }
 ---@field explorer_categories ("tables"|"views"|"stored_procedures"|"functions")[]
 ---@field auto_init_explorer boolean
----@field auto_connect_on_rename boolean
 ---@field execute_generated_select_statements boolean
 ---@field lsp_settings table
 ---@field sql_buffer_options table<string, any>
@@ -235,6 +233,7 @@
 ---@field last_execution fun(self: MssqlQueryManager): MssqlExecutionInfo
 ---@field update_connection_params fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult): boolean
 ---@field connectionchanged_async fun(self: MssqlQueryManager, result: MssqlConnectionChangedResult)
+---@field change_uri_async fun(self: MssqlQueryManager): boolean
 ---@field initialise_explorer_cache_async fun(self: MssqlQueryManager, opts?: FindObjectOpts): boolean
 ---@field find_async fun(self: MssqlQueryManager, opts?: { scope: string?, object_type: string? }): {script: string, select: boolean, label: string }?
 ---@field is_refreshing fun(self: MssqlQueryManager): boolean?
