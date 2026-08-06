@@ -199,8 +199,7 @@ M.refresh_intellisense = function(bufnr)
 	end
 
 	if client then
-		state.set_intellisense_ready(client.id, false)
-		utils.request_redrawstatus()
+		qm:set_intellisense_ready(false)
 	end
 
 	local success, msg = pcall(function()
