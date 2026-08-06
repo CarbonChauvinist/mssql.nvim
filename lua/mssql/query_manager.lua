@@ -442,29 +442,20 @@ end
 ---@param result MssqlConnectionChangedResult
 ---@return boolean success True if parameters were updated.
 function MssqlQueryManager:update_connection_params(result)
-	if not is_valid_connection_changed_result(result) then
+	if not is_valid_connection_changed_result(result)
+		or result.ownerUri ~= self:get_owner_uri() then
 		return false
 	end
 
-	if result.ownerUri ~= self:get_owner_uri() then
-		return false
-	end
+	self.last_connect_params = self.last_connect_params or {}
+	local conn = self.last_connect_params.connection or {}
+	self.last_connect_params.connection = conn
 
-
-	if not self.last_connect_params then
-		self.last_connect_params = {
-			connection = { options = {} }
-		}
-	end
-
-	if not self.last_connect_params.connection then
-		self.last_connect_params.connection = { options = {} }
-	end
-
-	self.last_connect_params.connection.summary = result.connection
-	self.last_connect_params.connection.options.user = result.connection.userName
-	self.last_connect_params.connection.options.database = result.connection.databaseName
-	self.last_connect_params.connection.options.server = result.connection.serverName
+	conn.options = conn.options or {}
+	conn.summary = result.connection
+	conn.options.user = result.connection.userName
+	conn.options.database = result.connection.databaseName
+	conn.options.server = result.connection.serverName
 
 	return true
 end
@@ -472,8 +463,18 @@ end
 --- Handler for connectionchanged notification.
 ---@param result MssqlConnectionChangedResult
 function MssqlQueryManager:connectionchanged_async(result)
-	if self:update_connection_params(result) then
-		utils.log_info("Database changed. Updating IntelliSense...")
+	if not result
+		or not result.connection
+		or not result.connection.databaseName then
+			return
+	end
+
+	local old_db = self:get_database_name()
+	local new_db = result.connection.databaseName
+
+	self:update_connection_params(result)
+	if old_db and new_db and old_db:lower() ~= new_db:lower() then
+		utils.log_info(string.format("Database changed to '%s'. Updating IntelliSense...", new_db))
 		self:initialise_explorer_cache_async({ is_background = true })
 	end
 end
@@ -493,6 +494,7 @@ function MssqlQueryManager:change_uri_async()
 		return false
 	end
 
+	---@diagnostic disable-next-line: param-type-mismatch
 	client:notify("query/connectionUriChanged", {
 		originalOwnerUri = old_uri,
 		newOwnerUri = new_uri,
