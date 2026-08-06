@@ -16,9 +16,6 @@ local scripting_uris = {}
 ---@type table<string, { co: thread, client_id: integer? }>
 local waiting_coroutines = {}
 
--- Store the last query selection range for rerun functionality
----@type {start: number[], end_: number[], buf: integer}?
-local last_query_range = nil
 
 -- Store extmark IDs of selection range instead of raw positions for rerun functionality
 ---@type {start: integer, end_: integer, buf: integer, start_ns: string, end_ns: string}?
@@ -126,34 +123,6 @@ M.resume_waiting_coroutine = function(bufnr, method, result, err, client_id)
 			end
 		end
 	end
-end
-
----@param range {start: number[], end_: number[], buf: integer}
-M.set_last_query_range = function(range)
-	last_query_range = range
-end
-
----@return {start: number[], end_: number[], buf: integer}?
-M.get_last_query_range = function()
-	return last_query_range
-end
-
----Clears the last query range (useful when buffer is closed or after certain operations)
-M.clear_last_query_range = function()
-	last_query_range = nil
-end
-
----Checks if the last query range is still valid
----@return boolean
-M.is_last_query_range_valid = function()
-	if not last_query_range then
-		return false
-	end
-	if not vim.api.nvim_buf_is_valid(last_query_range.buf) then
-		M.clear_last_query_range()
-		return false
-	end
-	return true
 end
 
 ---Checks if the last query range is still valid
