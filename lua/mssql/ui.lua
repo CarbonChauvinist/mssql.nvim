@@ -21,6 +21,25 @@ local get_valid_results_win = function()
 	return nil
 end
 
+---Helper to open a buffer in a split (horizontal/vertical) window, reusing it if valid.
+---@param bufnr integer
+---@param split_command "split"|"vsplit"
+local open_in_split = function(bufnr, split_command)
+	local original_window = vim.api.nvim_get_current_win()
+	local win = get_valid_results_win()
+
+	-- open a split if we haven't already
+	if not win then
+		vim.cmd(split_command)
+		win = vim.api.nvim_get_current_win()
+		vim.t.mssql_results_win = win
+	end
+
+	vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
+	vim.api.nvim_win_set_buf(win, bufnr)
+	vim.api.nvim_set_current_win(original_window)
+end
+
 ---Setter for external modules to toggle caching status in lualine
 ---@param is_caching boolean
 M.set_caching_status = function(is_caching)
@@ -94,45 +113,23 @@ M.insert_query_into_buffer = function(query, label)
 	return target_buf
 end
 
+---@type table<string, function>
 M.show_results_buffer_options = {
 	current_window = function(bufnr)
 		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
 		vim.api.nvim_set_current_buf(bufnr)
 	end,
 	split = function(bufnr)
-		local original_window = vim.api.nvim_get_current_win()
-		local win = get_valid_results_win()
-
-		-- open a split if we haven't done already
-		if not win then
-			vim.cmd.split()
-			win = vim.api.nvim_get_current_win()
-			vim.t.mssql_results_win = win
-		end
-
-		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
-		vim.api.nvim_win_set_buf(win, bufnr)
-		vim.api.nvim_set_current_win(original_window)
+		open_in_split(bufnr, "split")
 	end,
 	vsplit = function(bufnr)
-		local original_window = vim.api.nvim_get_current_win()
-		local win = get_valid_results_win()
-
-		-- open a split if we haven't done already
-		if not win then
-			vim.cmd.vsplit()
-			win = vim.api.nvim_get_current_win()
-			vim.t.mssql_results_win = win
-		end
-
-		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
-		vim.api.nvim_win_set_buf(win, bufnr)
-		vim.api.nvim_set_current_win(original_window)
+		open_in_split(bufnr, "vsplit")
 	end,
 }
 
--- If the open_results_in is a string, sets it to the appropriate function
+---Resolves the open_results_in config option to its corresponding function.
 ---@param opts? MssqlConfig
+---@return nil
 M.set_show_results_option = function(opts)
 	opts = opts or {}
 	if type(opts.open_results_in) == "string" and M.show_results_buffer_options[opts.open_results_in] then

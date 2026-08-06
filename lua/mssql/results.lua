@@ -2,9 +2,6 @@ local utils = require("mssql.utils")
 
 local M = {}
 
----@type integer?
-local mssql_window
-
 ---Truncates long cells and replaces literal newlines with formatted string representations.
 ---@param table string[][]
 ---@param limit integer
@@ -415,22 +412,6 @@ local show_result_set_async = function(result_set_summary, subset_params, opts)
 	end
 end
 
----Helper to open a buffer in a split (horizontal/vertical) window, reusing it if valid.
----@param bufnr integer
----@param split_command "split"|"vsplit"
-local open_in_split = function(bufnr, split_command)
-	local original_window = vim.api.nvim_get_current_win()
-
-	-- open a split if we haven't already
-	if not (mssql_window and vim.api.nvim_win_is_valid(mssql_window)) then
-		vim.cmd(split_command)
-		mssql_window = vim.api.nvim_get_current_win()
-	end
-
-	vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
-	vim.api.nvim_win_set_buf(mssql_window, bufnr)
-	vim.api.nvim_set_current_win(original_window)
-end
 
 ---Navigate pages in query results buffer
 ---@param direction "next" | "prev" | "first" | "last"
@@ -486,47 +467,6 @@ M.get_pagination_status = function(bufnr)
 	local end_row = info.currentRowsOffset + math.min(info.rowsPerQuery, info.totalRows - info.currentRowsOffset)
 
 	return string.format("  Rows %d-%d of %d  ", start_row, end_row, info.totalRows)
-end
-
----@type table<string, function>
-M.show_results_buffer_options = {
-	---Opens the buffer in the current window.
-	---@param bufnr integer
-	current_window = function(bufnr)
-		vim.api.nvim_set_option_value("buflisted", true, { buf = bufnr })
-		vim.api.nvim_set_current_buf(bufnr)
-	end,
-
-	---Opens the buffer in a horizontal split window.
-	---@param bufnr integer
-	split = function(bufnr)
-		open_in_split(bufnr, "split")
-	end,
-
-	---Opens the buffer in a vertical split window.
-	---@param bufnr integer
-	vsplit = function(bufnr)
-		open_in_split(bufnr, "vsplit")
-	end,
-}
-
----Resolves the open_results_in config option to its corresponding function.
----@param opts? MssqlConfig
----@return nil
-M.set_show_results_option = function(opts)
-	opts = opts or {}
-	if type(opts.open_results_in) == "string" and M.show_results_buffer_options[opts.open_results_in] then
-		opts.open_results_in = M.show_results_buffer_options[opts.open_results_in]
-	elseif type(opts.open_results_in) == "function" then
-		return
-	else
-		utils.log_error(
-			vim.inspect(opts.open_results_in)
-				.. " is not a valid option for open_results_in. Must be one of: "
-				.. table.concat(vim.tbl_keys(M.show_results_buffer_options), ", ")
-				.. ", or a function"
-		)
-	end
 end
 
 ---Asynchronously displays all result sets for a completed query execution.

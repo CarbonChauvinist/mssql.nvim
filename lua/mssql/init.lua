@@ -90,7 +90,7 @@ local function setup_async(user_opts)
 	opts.connections_file = opts.connections_file or joinpath(opts.data_dir, "connections.json")
 
 	state.set_config(opts)
-	results.set_show_results_option(opts)
+	ui.set_show_results_option(opts)
 	ui.set_view_message_option(opts)
 	make_directory(opts.data_dir)
 
