@@ -290,11 +290,6 @@ M.get_selected_text = function(bufnr)
 			local end_pos = vim.fn.getpos("'>")
 
 			require("mssql.state").set_last_query_range_as_extmarks(bufnr, start_pos, end_pos)
-			require("mssql.state").set_last_query_range({
-				start = start_pos,
-				end_ = end_pos,
-				buf = current_buf
-			})
 
 			local lines = vim.fn.getregion(start_pos, end_pos, { mode = vim.fn.visualmode() })
 
@@ -304,54 +299,6 @@ M.get_selected_text = function(bufnr)
 
 	local content = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 	return table.concat(content, "\n")
-end
-
---- Executes a query and returns all the results in the first batch and result set as a table of rows
-M.get_query_result_async = function(query_result_summary)
-	-- ensure overall response payload and first batch summary are all valid tables
-	if M.is_empty(query_result_summary) or M.is_empty(query_result_summary.batchSummaries) or M.is_empty(query_result_summary.batchSummaries[1]) then
-		error("Query result is invalid or empty", 0)
-	end
-
-	if query_result_summary.batchSummaries[1].hasError then
-		error("Query threw an error", 0)
-	end
-
-	local batch_summary = query_result_summary.batchSummaries[1]
-	-- ensure resultSetSummaries exists except for DML statements where it won't exist
-	if M.is_empty(batch_summary.resultSetSummaries) or M.is_empty(batch_summary.resultSetSummaries[1]) then
-		return {} -- No result sets (e.g. INSERT/UPDATE/DELETE)
-	end
-
-	local result_set = batch_summary.resultSetSummaries[1]
-
-	local subset_params = {
-		ownerUri = query_result_summary.ownerUri,
-		batchIndex = 0,
-		resultSetIndex = 0,
-		rowsStartIndex = 0,
-		rowsCount = result_set.rowCount
-	}
-
-	M.wait_for_schedule_async()
-
-	local rows = M.get_rows_async(subset_params)
-	local columnNames = vim.iter(result_set.columnInfo)
-		:map(function(ci)
-			return ci.columnName
-		end)
-		:totable()
-	local result = {}
-
-	for _, row in pairs(rows) do
-		local item = {}
-		for index, _ in ipairs(columnNames) do
-			item[columnNames[index]] = row[index]
-		end
-		table.insert(result, item)
-	end
-
-	return result
 end
 
 --- Handles the logic of disconnecting and attempting to reconnect a session
