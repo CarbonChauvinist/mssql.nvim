@@ -302,6 +302,14 @@ M.execute_current_statement = utils.async(function(opts)
 	M.execute_query(opts)
 end)
 
+---Executes the last query selection from the current buffer using saved extmarks
+---@param opts? MssqlExecutionOptions
+M.execute_rerun_last = utils.async(function(opts)
+	opts = opts or {}
+	opts.rerun_last = true
+	M.execute_query(opts)
+end)
+
 ---@overload fun()
 ---@overload fun(bufnr: integer)
 ---@param bufnr? integer

@@ -96,7 +96,7 @@ return {
 			},
 			execute_rerun_last = {
 				"xl",
-				function() M.execute_query({ rerun_last = true }) end,
+				M.execute_rerun_last,
 				desc = "Rerun Last Selection",
 				icon = { icon = "", color = "yellow" },
 			},
@@ -237,7 +237,7 @@ return {
 			Disconnect = M.disconnect,
 			ExecuteQuery = M.execute_query,
 			ExecuteCurrentStatement = M.execute_current_statement,
-			ExecuteRerunLast = function() M.execute_query({ rerun_last = true }) end,
+			ExecuteRerunLast = M.execute_rerun_last,
 			RefreshIntelliSense = M.refresh_intellisense,
 			RefreshExplorerCache = M.refresh_explorer_cache,
 			EditConnections = M.edit_connections,
