@@ -149,9 +149,6 @@ local get_session_async = function(client, connection_options, timeout_ms, cance
 				msg = msg .. " (Server Connection Timed Out)"
 			end
 		end
-		if not _G.dummy_buf_id then
-			utils.log_error(msg)
-		end
 		return nil, msg
 	end
 

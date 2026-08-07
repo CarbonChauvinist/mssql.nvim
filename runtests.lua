@@ -15,6 +15,9 @@ local function setup_env()
 	end)
 end
 
+setup_env()
+local test_utils = require("tests.utils")
+
 local function print_msg(msg)
 	io.stdout:write(msg .. "\n")
 end
@@ -103,19 +106,11 @@ local function discover_tests()
 end
 
 local function run_suite()
-	setup_env()
 	local test_files = discover_tests()
 	local failures = {}
 
 	coroutine.resume(coroutine.create(function()
 		print_msg("=== Starting Test Suite ( " .. #test_files .. " files) ===")
-
-		-- Keep a dummy SQL buffer active to prevent Neovim from automatically
-		-- shutting down and restarting the LSP client between tests.
-		local dummy_buf = vim.api.nvim_create_buf(false, true)
-		vim.api.nvim_buf_set_name(dummy_buf, vim.fs.joinpath(vim.loop.cwd(), "dummy_persistent_test.sql"))
-		vim.api.nvim_set_option_value("filetype", "sql", { buf = dummy_buf })
-		_G.dummy_buf_id = dummy_buf
 
 		for i, import_path in ipairs(test_files) do
 			local test_module = require(import_path)
@@ -141,6 +136,7 @@ local function run_suite()
 		end
 
 		print_msg("\n=== Suite Completed ===")
+		test_utils.cleanup_test_harness()
 		if #failures > 0 then
 			print_msg("Failure (" .. tostring(#failures) .. "):")
 			for _, failed_test in ipairs(failures) do
@@ -150,24 +146,19 @@ local function run_suite()
 			print_msg("All (" .. tostring(#test_files) .. ") tests passed.")
 		end
 
-		-- Clean up the persistent dummy buffer
-		if vim.api.nvim_buf_is_valid(dummy_buf) then
-			vim.api.nvim_buf_delete(dummy_buf, { force = true })
-		end
-
 		local clients = vim.lsp.get_clients({ name = "mssql_ls" })
 		if #clients > 0 then
 			print_msg("Shutting down " .. #clients .. " LSP client(s)...")
 			for _, client in ipairs(clients) do
-				client:stop(true)
+				pcall(function() client:stop() end)
 			end
 		end
 
 		if #failures > 0 then
 			copy_state_folder()
-			vim.cmd.cquit()
+			vim.schedule(function() vim.cmd.cquit() end)
 		else
-			vim.cmd.qall({ bang = true })
+			vim.schedule(function() vim.cmd.qall({ bang = true }) end)
 		end
 	end))
 end

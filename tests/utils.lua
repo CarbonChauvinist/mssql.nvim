@@ -8,6 +8,9 @@ local M = {}
 ---@type integer
 local next_mock_client_id = 10000
 
+---@type integer? Persistent test harness buffer used to prevent shutting down and restarting LSP between tests.
+M.harness_buf_id = nil
+
 -- Simple aliases for convenience.
 M.defer_async = utils.defer_async
 
@@ -74,6 +77,34 @@ local function get_pipe_visual_positions(str)
 		current_width = current_width + vim.fn.strdisplaywidth(char)
 	end
 	return positions
+end
+
+---Initializes the persistent test harness buffer to keep LSP active across test specs
+---@return integer bufnr
+M.init_test_harness = function()
+	if not M.harness_buf_id or not vim.api.nvim_buf_is_valid(M.harness_buf_id) then
+		local buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_buf_set_name(buf, vim.fs.joinpath(vim.loop.cwd(), "dummy_test_harness.sql"))
+		vim.api.nvim_set_option_value("filetype", "sql", { buf = buf })
+		M.harness_buf_id = buf
+	end
+	return M.harness_buf_id
+end
+
+---Cleans up the persistent test harness buffer at the end of the test suite run
+M.cleanup_test_harness = function()
+	if M.harness_buf_id and vim.api.nvim_buf_is_valid(M.harness_buf_id) then
+		local buf = M.harness_buf_id
+		---@cast buf -nil
+		M.harness_buf_id = nil
+		if vim.api.nvim_get_current_buf() == buf then
+			local scratch = vim.api.nvim_create_buf(false, true)
+			pcall(vim.api.nvim_win_set_buf, 0, scratch)
+		end
+
+		pcall(vim.api.nvim_buf_delete, buf, { force = true })
+	end
+	M.harness_buf_id = nil
 end
 
 --- Gets the full text content of a buffer as a single string.
@@ -384,6 +415,7 @@ M.setup_mssql_async = function(opts)
 		end)
 	end)
 	coroutine.yield()
+	M.init_test_harness()
 end
 
 --- Safely removes results buffer.
@@ -642,7 +674,7 @@ M.wait_for_cache_content = function(item_label, opts)
 	return true
 end
 
---- Safely deletes a given buffer
+--- Safely deletes a given buffer without deleting the persistent test harness buffer
 ---@param buf integer Buffer to delete.
 ---@param opts table? Options passed to nvim_buf_delete.
 ---@return boolean success True if deleted successfully.
@@ -650,7 +682,7 @@ M.safe_buf_delete = function(buf, opts)
 	opts = opts or {}
 
 	-- prevent dummy buffer deletion
-	if _G.dummy_buf_id and buf == _G.dummy_buf_id then
+	if M.harness_buf_id and buf == M.harness_buf_id then
 		return true
 	end
 
