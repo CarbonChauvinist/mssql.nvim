@@ -22,16 +22,6 @@ local function print_msg(msg)
 	io.stdout:write(msg .. "\n")
 end
 
-local function copy_state_folder()
-	if vim.env.GITHUB_ACTIONS ~= "true" then return end
-
-	local src = vim.fn.stdpath("state")
-	local dst = "nvim-state-dump"
-	print_msg("Dumping nvim state from: " .. src)
-
-	vim.fn.system({ "cp", "-r", src, dst })
-end
-
 --- Extract filter string from CLI args
 --- Usage: nvim -u runtests.lua --headless -- hover foo
 ---@return table filters
@@ -151,7 +141,6 @@ local function run_suite()
 		end
 
 		if #failures > 0 then
-			copy_state_folder()
 			vim.schedule(function() vim.cmd.cquit() end)
 		else
 			vim.schedule(function() vim.cmd.qall({ bang = true }) end)
