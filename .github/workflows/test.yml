@@ -9,9 +9,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        # Getting problems on mac os
-        # os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest]
 
     env:
       DbServer: localhost
@@ -34,21 +32,6 @@ jobs:
           sqlcmd -S "${{ env.DbServer }}" -U "${{ env.DbUser }}" -P "${{
           env.DbPassword }}" -d "${{ env.DbDatabase }}" -i
           ./.github/workflows/seed.sql -C
-
-      - name: Install winget (Windows)
-        if: runner.os == 'Windows'
-        uses: Cyberboss/install-winget@v1
-
-      - name: Install Neovim (Windows) and add to PATH
-        if: runner.os == 'Windows'
-        run: |
-          winget install Neovim.Neovim --silent --accept-package-agreements --accept-source-agreements
-          echo "$Env:ProgramFiles\Neovim\bin" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
-
-      - name: Install Neovim (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install neovim
 
       - name: Install Neovim (Linux)
         if: runner.os == 'Linux'

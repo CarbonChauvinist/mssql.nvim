@@ -235,10 +235,6 @@ M.enable = function()
 	local joinpath = vim.fs.joinpath
 	local default_path = joinpath(opts and opts.data_dir, "sqltools/MicrosoftSqlToolsServiceLayer")
 
-	if jit.os == "Windows" then
-		default_path = default_path .. ".exe"
-	end
-
 	local config = {
 		name = lsp_name,
 		cmd = (function()

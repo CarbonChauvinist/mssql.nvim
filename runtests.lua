@@ -29,11 +29,7 @@ local function copy_state_folder()
 	local dst = "nvim-state-dump"
 	print_msg("Dumping nvim state from: " .. src)
 
-	if vim.fn.has("win32") == 1 then
-		vim.fn.system({ "xcopy", "/E", "/I", "/Y", src, dst })
-	else
-		vim.fn.system({ "cp", "-r", src, dst })
-	end
+	vim.fn.system({ "cp", "-r", src, dst })
 end
 
 --- Extract filter string from CLI args
