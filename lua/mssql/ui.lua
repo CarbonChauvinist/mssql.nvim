@@ -8,6 +8,7 @@ local M = {}
 local message_buffer
 local message_buffer_error_ns = vim.api.nvim_create_namespace("mssql_error_highlight")
 local show_caching_in_status_line = false
+local scalar_virt_ns = vim.api.nvim_create_namespace("mssql_virtual_text")
 
 ---Returns the valid results split window ID for the current tabage, or nil if invalid
 ---Resets `vim.t.mssql_results_win` to prevent stale window handle references when closed
@@ -44,6 +45,26 @@ end
 ---@param is_caching boolean
 M.set_caching_status = function(is_caching)
 	show_caching_in_status_line = is_caching
+end
+
+---Renders scalar query result as virtual text at the end of the query line
+---@param bufnr integer
+---@param line integer 0-indexed line number
+---@param text string Scalar value string
+M.set_virtual_text = function(bufnr, line, text)
+	bufnr = bufnr or vim.api.nvim_get_current_buf()
+	vim.api.nvim_buf_clear_namespace(bufnr, scalar_virt_ns, line, line + 1)
+	vim.api.nvim_buf_set_extmark(bufnr, scalar_virt_ns, line, 0, {
+		virt_text = { { " => " .. text, "Comment" } },
+		virt_text_pos = "eol",
+	})
+end
+
+---Clears scalar virtual text from buffer
+---@param bufnr? integer
+M.clear_virtual_text = function(bufnr)
+	bufnr = bufnr or vim.api.nvim_get_current_buf()
+	vim.api.nvim_buf_clear_namespace(bufnr, scalar_virt_ns, 0, -1)
 end
 
 ---Creates a new query buffer and waits for LSP attachment (default 10s)

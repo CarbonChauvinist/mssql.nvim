@@ -3,7 +3,7 @@ local utils = require("mssql.utils")
 local M = {}
 
 ---Truncates long cells and replaces literal newlines with formatted string representations.
----@param table string[][]
+---@param tbl string[][]
 ---@param limit integer
 local sanitise = function(tbl, limit)
 	for _, record in ipairs(tbl) do
@@ -330,10 +330,27 @@ local format_as_json = function(column_headers, rows)
 end
 
 ---Asynchronously fetches and displays a specific result set in a new results buffer.
----@param result_set_summary MssqlResultSetSummary
----@param subset_params SubsetParams
----@param opts MssqlOptions
-local show_result_set_async = function(result_set_summary, subset_params, opts)
+---@param ctx ShowResultSetContext
+local show_result_set_async = function(ctx)
+	local result_set_summary = ctx.result_set_summary
+	local batch_summary = ctx.batch_summary
+	-- resolve selection: prefer batchstart capture (guaranteed per-batch)
+	-- fall back to query/complete's selection if no batchstart data, then cursor position
+	local selection = nil
+	if batch_summary then
+		local owner_buf_tmp = vim.fn.bufnr(vim.uri_to_fname(ctx.subset_params.ownerUri))
+		local qm = require("mssql.state").get_query_manager(owner_buf_tmp)
+		selection = qm and qm._batch_selections and qm._batch_selections[batch_summary.id]
+	end
+	if not selection then
+		selection = batch_summary and batch_summary.selection
+	end
+	local subset_params = ctx.subset_params
+	local config = ctx.config
+	local exec_opts = ctx.exec_opts or {}
+
+	if not result_set_summary then return end
+
 	local column_headers = vim.iter(result_set_summary.columnInfo)
 		:map(function(i)
 			return i.columnName
@@ -341,23 +358,43 @@ local show_result_set_async = function(result_set_summary, subset_params, opts)
 		:totable()
 
 	local rows = utils.get_rows_async(subset_params)
+	local want_virt = config.display_scalar_as_virtual_text or exec_opts.virtual_text
+
+	-- only show virtual text when the result set has a unique position
+	-- within a single batch (i.e. no GO batch separators) all results share
+	-- the same batch_summary.selection, so virtual text would collide
+	local result_set_count = batch_summary and batch_summary.resultSetSummaries and #batch_summary.resultSetSummaries or 0
+	if want_virt and result_set_count <= 1 and #rows == 1 and #column_headers == 1 then
+		local owner_buf = vim.fn.bufnr(vim.uri_to_fname(subset_params.ownerUri))
+		local target_line
+		if selection and selection.endLine then
+			target_line = math.max(0, selection.endLine - 1)
+		else
+			target_line = vim.api.nvim_win_get_cursor(0)[1] - 1
+		end
+
+		local scalar_val = tostring(rows[1][1] or "NULL")
+		require("mssql.ui").set_virtual_text(owner_buf, target_line, scalar_val)
+		return
+	end
+
 	local extension, filetype, lines
-	if opts.results_output_format == "json" then
+	if config.results_output_format == "json" then
 		extension = "json"
 		filetype = "json"
 		lines = format_as_json(column_headers, rows)
-	elseif opts.results_output_format == "csv" then
+	elseif config.results_output_format == "csv" then
 		extension = "csv"
 		filetype = "csv"
 		lines = format_as_csv(column_headers, rows)
-	elseif opts.results_output_format == "text" then
+	elseif config.results_output_format == "text" then
 		extension = "txt"
 		filetype = ""
-		lines = format_as_text(column_headers, rows, opts.max_column_width)
-	elseif opts.results_output_format == "markdown" then
+		lines = format_as_text(column_headers, rows, config.max_column_width)
+	elseif config.results_output_format == "markdown" then
 		extension = "md"
 		filetype = "markdown"
-		lines = pretty_print(column_headers, rows, opts.max_column_width)
+		lines = pretty_print(column_headers, rows, config.max_column_width)
 	end
 
 	local owner_buf = vim.fn.bufnr(vim.uri_to_fname(subset_params.ownerUri))
@@ -386,18 +423,18 @@ local show_result_set_async = function(result_set_summary, subset_params, opts)
 		batchIndex = subset_params.batchIndex,
 		resultSetIndex = subset_params.resultSetIndex,
 		totalRows = result_set_summary.rowCount or 0,
-		rowsPerQuery = opts.max_rows,
+		rowsPerQuery = config.max_rows,
 		currentRowsOffset = 0,
 		columnInfo = result_set_summary.columnInfo,
-		max_column_width = opts.max_column_width,
+		max_column_width = config.max_column_width,
 	}
 	vim.b[buf].query_result_info = info
 
 	display_markdown(lines, buf)
-	opts.open_results_in(buf)
+	config.open_results_in(buf)
 
 	-- set buffer local keymaps for pagination
-	local maps = opts.results_keymaps or {}
+	local maps = config.results_keymaps or {}
 	if maps.prev_page then
 		vim.keymap.set("n", maps.prev_page, M.prev_page, { buffer = buf, nowait = true})
 	end
@@ -470,16 +507,20 @@ M.get_pagination_status = function(bufnr)
 end
 
 ---Asynchronously displays all result sets for a completed query execution.
----@param opts MssqlOptions
+---@param config MssqlOptions
 ---@param result MssqlQueryExecuteSubsetResult
+---@param exec_opts? MssqlExecutionOptions
 ---@return nil
-M.display = function(opts, result)
+M.display = function(config, result, exec_opts)
+	exec_opts = exec_opts or {}
 	if utils.is_empty(result) or utils.is_empty(result.batchSummaries) then return end
 	local owner_buf = vim.fn.bufnr(vim.uri_to_fname(result.ownerUri))
 	local qm = require("mssql.state").get_query_manager(owner_buf)
 
 	-- delete existing result buffers
 	if qm then qm:clear_result_buffers() end
+	local want_virt = config.display_scalar_as_virtual_text or (exec_opts and exec_opts.virtual_text)
+	if want_virt then require("mssql.ui").clear_virtual_text(owner_buf) end
 
 	if utils.is_empty(result) or utils.is_empty(result.batchSummaries) then
 		return
@@ -493,12 +534,20 @@ M.display = function(opts, result)
 					batchIndex = batch_index - 1,
 					resultSetIndex = result_set_index - 1,
 					rowsStartIndex = 0,
-					rowsCount = math.min(result_set_summary.rowCount or 0, opts.max_rows),
+					rowsCount = math.min(result_set_summary.rowCount or 0, config.max_rows),
 				}
 				-- fetch and show all results at once
+				local captured_batch_summary = batch_summary
+				local captured_result_set_summary = result_set_summary
 				vim.schedule(function()
 					utils.try_resume(coroutine.create(function()
-						show_result_set_async(result_set_summary, subset_params, opts)
+						show_result_set_async({
+							result_set_summary = captured_result_set_summary,
+							batch_summary = captured_batch_summary,
+							subset_params = subset_params,
+							config = config,
+							exec_opts = exec_opts,
+						})
 					end))
 				end)
 			end

@@ -99,7 +99,14 @@ local customized_handlers = {
 		end
 		local selection = result.batchSummary.selection
 		local start_line = (selection.startLine or 0) + 1
-		local _batch_id = (result.batchSummary.id or 0) + 1
+		local batch_id = result.batchSummary.id
+		local bufnr = vim.fn.bufnr(vim.uri_to_fname(result.ownerUri))
+		if bufnr ~= -1 and batch_id ~= nil then
+			local qm = state.get_query_manager(bufnr)
+			if qm then
+				qm._batch_selections[batch_id] = selection
+			end
+		end
 		local msg = string.format("Started executing query at Line %d", start_line)
 		local config = state.get_config()
 		if config and config.view_messages_in then
