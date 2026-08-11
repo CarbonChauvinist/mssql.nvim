@@ -253,7 +253,7 @@ M.execute_query = utils.async(function(opts)
 	if not qm or not curr_conf then return end
 
 	ui.clear_message_buffer()
-	local result, query, line, column
+	local result, query, line, column, range
 
 	if opts.current_statement then
 		local cursor = vim.api.nvim_win_get_cursor(0)
@@ -264,13 +264,13 @@ M.execute_query = utils.async(function(opts)
 			utils.log_error("No valid previous query selection found to rerun.")
 			return
 		end
-		local range = state.get_last_query_range_from_extmarks()
-		if not range then
+		local last_range = state.get_last_query_range_from_extmarks()
+		if not last_range then
 			utils.log_error("No previous query range found.")
 			return
 		end
 
-		local lines = vim.fn.getregion(range.start, range.end_, { mode = "v"})
+		local lines = vim.fn.getregion(last_range.start, last_range.end_, { mode = "v"})
 		query = table.concat(lines, "\n")
 
 		if not query or query == "" then
@@ -278,19 +278,42 @@ M.execute_query = utils.async(function(opts)
 			return
 		end
 
+		range = { -- convert to 0-indexed from 1-indexed extmark positions
+			start_line = last_range.start[1] - 1,
+			start_col = last_range.start[2] - 1,
+			end_line = last_range.end_[1] - 1,
+			end_col = last_range.end_[2] - 1,
+		}
+
 		if opts.highlight == true then
-			vim.fn.setpos("'<", range.start)
-			vim.fn.setpos("'>", range.end_)
+			vim.fn.setpos("'<", last_range.start)
+			vim.fn.setpos("'>", last_range.end_)
 			vim.cmd.normal("gv")
 		end
 	elseif not opts.current_statement and not opts.rerun_last then
 		query = utils.get_selected_text(bufnr)
+		local mode = vim.api.nvim_get_mode().mode
+		if mode:match("[vV]") or mode == "\22" then
+			local p_start = vim.fn.get_pos("'<")
+			local p_end = vim.fn.getpos("'>")
+			range = {
+				start_line = math.max(0, p_start[2] - 1),
+				start_col = math.max(0, p_start[3] - 1),
+				end_line = math.max(0, p_end[2] - 1),
+				end_col = math.max(0, p_end[3] -1),
+			}
+		end
 	end
 
 	ui.clear_message_buffer()
-	result = qm:execute_async({ query = query, line = line, column = column })
+	--- for rerun_last, send the extracted query text directly
+	--- the extmark-derived range has inflated endColumn from
+	--- linewise visual marks (col=MAXINT), which breaks executeDocumentSelection
+	local exec_range = range
+	if opts.rerun_last then exec_range = nil end
+	result = qm:execute_async({ query = query, line = line, column = column, range = exec_range })
 	if result then -- since cancelled query returns nil, have to check for nil before displaying
-		results.display(curr_conf, result)
+		results.display(curr_conf, result, opts)
 	end
 end)
 
@@ -301,6 +324,17 @@ M.execute_current_statement = utils.async(function(opts)
 	opts.current_statement = true
 	M.execute_query(opts)
 end)
+
+---Executes statement under cursor and renders scalar result as inline virtual text
+---@param opts? MssqlExecutionOptions
+M.execute_virtual_text = utils.async(function(opts)
+	opts = opts or {}
+	opts.virtual_text = true
+	opts.current_statement = true
+	M.execute_query(opts)
+end)
+
+M.clear_virtual_text = ui.clear_virtual_text
 
 ---Executes the last query selection from the current buffer using saved extmarks
 ---@param opts? MssqlExecutionOptions

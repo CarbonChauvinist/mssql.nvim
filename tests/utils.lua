@@ -405,6 +405,7 @@ M.setup_mssql_async = function(opts)
 		explorer_categories = { "tables", "views", "stored_procedures", "functions" },
 		auto_init_explorer = true,
 		results_output_format = "markdown",
+		display_scalar_as_virtual_text = false,
 	} --[[@as MssqlConfig]]
 	opts = vim.tbl_deep_extend("keep", opts, test_defaults)
 

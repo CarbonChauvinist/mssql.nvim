@@ -23,6 +23,9 @@ local M = {
 	--]]
     results_output_format = "markdown",
 
+	-- Automatically display single scalar results (1 row x 1 col) as inline virtual text (default false)
+	display_scalar_as_virtual_text = false,
+
 	--[[ Where to view messages sent from sql server (eg when executing queries)
   Valid options are:
   "notification"                        - View as a vim notification
