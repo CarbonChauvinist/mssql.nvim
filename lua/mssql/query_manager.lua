@@ -458,7 +458,9 @@ end
 ---@return MssqlConnectionOptions? options Returns nil if not connected or configured
 function MssqlQueryManager:get_connection_options()
 	if self.last_connect_params and self.last_connect_params.connection then
-		return self.last_connect_params.connection.options
+		local opts = vim.deepcopy(self.last_connect_params.connection.options)
+		opts.password = nil -- never needed after initial connect; LSP auths by ownerUri
+		return opts
 	end
 	return nil
 end
