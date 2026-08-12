@@ -459,7 +459,6 @@ M.edit_connections = function(opts)
     "authenticationType" : "SqlLogin",
     "user" : "Admin",
     "password" : "Your_Password",
-    "trustServerCertificate" : true
   }
 }
 ]=]
