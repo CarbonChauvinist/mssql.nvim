@@ -28,10 +28,11 @@ M.save_query_results_async = function(result_info)
 
 	local method
 	local openAfterSave = true
-	if file:match("%.csv$") then method = "query/saveCsv"
-	elseif file:match("%.json$") then method = "query/saveJson"
-	elseif file:match("%.xml$") then method = "query/saveXml"
-	elseif file:match("%.xlsx?$") then
+	local file_icase = file:lower()
+	if file_icase:match("%.csv$") then method = "query/saveCsv"
+	elseif file_icase:match("%.json$") then method = "query/saveJson"
+	elseif file_icase:match("%.xml$") then method = "query/saveXml"
+	elseif file_icase:match("%.xlsx?$") then
 		method = "query/saveExcel"
 		openAfterSave = false
 	else
