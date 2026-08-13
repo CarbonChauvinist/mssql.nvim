@@ -463,6 +463,15 @@ M.edit_connections = function(opts)
 }
 ]=]
 		vim.fn.writefile(vim.split(default_connections, "\n"), opts.connections_file)
+		local ok, err = vim.uv.fs_chmod(opts.connections_file, tonumber("600", 8))
+		if not ok then
+			M.log_warn(string.format(
+				"Failed to restrict permissions on connections file %s: %s",
+				opts.connections_file,
+				tostring(err)
+			))
+		end
+
 	end
 	vim.cmd.edit(opts.connections_file)
 end
