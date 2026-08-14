@@ -5,6 +5,7 @@ return {
 	run_test_async = function()
 		vim.cmd.edit({ args = { "tests/completion.sql" } })
 		local buf = vim.api.nvim_get_current_buf()
+		test_utils.wait_for_lsp_attach(buf)
 
 		-- move to the first E in SELECT test for "SELECT"
 		test_utils.wait_for_completion_item(buf, "SELECT", { cursor = {1,1}})
