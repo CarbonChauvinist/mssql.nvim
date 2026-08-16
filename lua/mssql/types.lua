@@ -267,6 +267,7 @@
 ---@field batchIndex integer
 ---@field resultSetIndex integer
 ---@field columnInfo ColumnInfo[]
+---@field format "csv" | "text" | "json" | "markdown"
 
 ---@class ColumnInfo
 ---@field columnName string

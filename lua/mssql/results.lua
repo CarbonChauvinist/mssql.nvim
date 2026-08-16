@@ -152,77 +152,6 @@ local set_display_lines = function(lines, bufnr)
 	vim.api.nvim_set_option_value("modifiable", false, { buf = bufnr })
 end
 
----Fetches a subset of rows from the query dataset and renders them in the results buffer.
----Accounts for offset allowing pagination.
----@param bufnr? integer The buffer number to render in (defaults to current buffer)
----@param new_offset? integer The new row offset for pagination (optional, clamped to valid range)
----@return nil
-local fetch_and_render_page = function(bufnr, new_offset)
-	if not (bufnr and vim.api.nvim_buf_is_valid(bufnr)) then
-		bufnr = vim.api.nvim_get_current_buf()
-	end
-
-	---@type QueryResultInfo?
-	local original_info = vim.b[bufnr].query_result_info
-	if not original_info then
-		utils.log_error("Not a query result buffer")
-		return
-	end
-
-	---@type QueryResultInfo
-	local info = vim.deepcopy(original_info)
-
-	-- store the originally requested offset before clamping
-	local requested_offset = new_offset
-
-	local last_page_start = 0
-	if info.totalRows > 0 and info.rowsPerQuery > 0 then
-		last_page_start = math.floor((info.totalRows - 1) / info.rowsPerQuery) * info.rowsPerQuery
-	end
-	new_offset = math.max(0, math.min(new_offset or 0, last_page_start))
-
-	if new_offset == info.currentRowsOffset then
-		-- compare requested offset with current one to know the direction
-		if requested_offset and requested_offset < info.currentRowsOffset then
-			utils.log_info("Already at first page")
-		else
-			utils.log_info("Already at last page")
-		end
-		return
-	end
-
-	info.currentRowsOffset = new_offset
-
-	---@type SubsetParams
-	local new_subset_params = {
-		ownerUri = info.ownerUri,
-		batchIndex = info.batchIndex,
-		resultSetIndex = info.resultSetIndex,
-		rowsStartIndex = info.currentRowsOffset,
-		rowsCount = math.min(info.rowsPerQuery, info.totalRows - info.currentRowsOffset)
-	}
-
-	local rows = utils.get_rows_async(new_subset_params)
-
-	vim.schedule(function()
-		vim.b[bufnr].query_result_info = info
-		local column_headers = vim.iter(info.columnInfo)
-			:map(function(i) return i.columnName end)
-			:totable()
-
-		local lines = format_as_md(column_headers, rows, info.max_column_width)
-
-		set_display_lines(lines, bufnr)
-		utils.request_redrawstatus()
-		utils.log_info(string.format(
-			"Showing rows %d-%d of %d",
-			info.currentRowsOffset + 1,
-			info.currentRowsOffset + #rows,
-			info.totalRows
-			)
-		)
-	end)
-end
 
 ---Formats query results as a classic space-aligned CLI text table (like sqlcmd)
 ---@param column_headers string[]
@@ -329,6 +258,102 @@ local format_as_json = function(column_headers, rows)
 	end
 end
 
+local format_specs = {
+	["json"] = { formatter = format_as_json, extension = "json", filetype = "json" },
+	["csv"] = { formatter = format_as_csv, extension = "csv", filetype = "csv" },
+	["text"] = { formatter = format_as_text, extension = "txt", filetype = "" },
+	["markdown"] = { formatter = format_as_md, extension = "md", filetype = "markdown" },
+}
+
+---Dispatches to the formatter matching the given format name.
+---@param format string
+---@param column_headers string[]
+---@param rows string[][]
+---@param max_width integer
+---@return string extension
+---@return string filetype
+---@return string[] lines
+local format_results = function(format, column_headers, rows, max_width)
+	-- markdown is the default fallback for unknown or unset passed formats
+	local spec = format_specs[format] or format_specs["markdown"]
+
+	return spec.extension,
+		spec.filetype,
+		spec.formatter(column_headers, rows, max_width)
+end
+
+---Fetches a subset of rows from the query dataset and renders them in the results buffer.
+---Accounts for offset allowing pagination.
+---@param bufnr? integer The buffer number to render in (defaults to current buffer)
+---@param new_offset? integer The new row offset for pagination (optional, clamped to valid range)
+---@return nil
+local fetch_and_render_page = function(bufnr, new_offset)
+	if not (bufnr and vim.api.nvim_buf_is_valid(bufnr)) then
+		bufnr = vim.api.nvim_get_current_buf()
+	end
+
+	---@type QueryResultInfo?
+	local original_info = vim.b[bufnr].query_result_info
+	if not original_info then
+		utils.log_error("Not a query result buffer")
+		return
+	end
+
+	---@type QueryResultInfo
+	local info = vim.deepcopy(original_info)
+
+	-- store the originally requested offset before clamping
+	local requested_offset = new_offset
+
+	local last_page_start = 0
+	if info.totalRows > 0 and info.rowsPerQuery > 0 then
+		last_page_start = math.floor((info.totalRows - 1) / info.rowsPerQuery) * info.rowsPerQuery
+	end
+	new_offset = math.max(0, math.min(new_offset or 0, last_page_start))
+
+	if new_offset == info.currentRowsOffset then
+		-- compare requested offset with current one to know the direction
+		if requested_offset and requested_offset < info.currentRowsOffset then
+			utils.log_info("Already at first page")
+		else
+			utils.log_info("Already at last page")
+		end
+		return
+	end
+
+	info.currentRowsOffset = new_offset
+
+	---@type SubsetParams
+	local new_subset_params = {
+		ownerUri = info.ownerUri,
+		batchIndex = info.batchIndex,
+		resultSetIndex = info.resultSetIndex,
+		rowsStartIndex = info.currentRowsOffset,
+		rowsCount = math.min(info.rowsPerQuery, info.totalRows - info.currentRowsOffset)
+	}
+
+	local rows = utils.get_rows_async(new_subset_params)
+
+	vim.schedule(function()
+		vim.b[bufnr].query_result_info = info
+		local column_headers = vim.iter(info.columnInfo)
+			:map(function(i) return i.columnName end)
+			:totable()
+
+		local _, _, lines = format_results(info.format, column_headers, rows, info.max_column_width)
+
+		set_display_lines(lines, bufnr)
+		utils.request_redrawstatus()
+		utils.log_info(string.format(
+			"Showing rows %d-%d of %d",
+			info.currentRowsOffset + 1,
+			info.currentRowsOffset + #rows,
+			info.totalRows
+			)
+		)
+	end)
+end
+
 ---Asynchronously fetches and displays a specific result set in a new results buffer.
 ---@param ctx ShowResultSetContext
 local show_result_set_async = function(ctx)
@@ -378,24 +403,7 @@ local show_result_set_async = function(ctx)
 		return
 	end
 
-	local extension, filetype, lines
-	if config.results_output_format == "json" then
-		extension = "json"
-		filetype = "json"
-		lines = format_as_json(column_headers, rows)
-	elseif config.results_output_format == "csv" then
-		extension = "csv"
-		filetype = "csv"
-		lines = format_as_csv(column_headers, rows)
-	elseif config.results_output_format == "text" then
-		extension = "txt"
-		filetype = ""
-		lines = format_as_text(column_headers, rows, config.max_column_width)
-	elseif config.results_output_format == "markdown" then
-		extension = "md"
-		filetype = "markdown"
-		lines = format_as_md(column_headers, rows, config.max_column_width)
-	end
+	local extension, filetype, lines = format_results(config.results_output_format, column_headers, rows, config.max_column_width)
 
 	local owner_buf = vim.fn.bufnr(vim.uri_to_fname(subset_params.ownerUri))
 	local qm = require("mssql.state").get_query_manager(owner_buf)
@@ -427,6 +435,7 @@ local show_result_set_async = function(ctx)
 		currentRowsOffset = 0,
 		columnInfo = result_set_summary.columnInfo,
 		max_column_width = config.max_column_width,
+		format = config.results_output_format,
 	}
 	vim.b[buf].query_result_info = info
 
