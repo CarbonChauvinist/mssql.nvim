@@ -132,13 +132,18 @@ local function run_suite()
 			print_msg("All (" .. tostring(#test_files) .. ") tests passed.")
 		end
 
-		local clients = vim.lsp.get_clients({ name = "mssql_ls" })
+		local clients = vim.lsp.get_clients({ name = "mssql_ls", _uninitialized = true })
 		if #clients > 0 then
 			print_msg("Shutting down " .. #clients .. " LSP client(s)...")
 			for _, client in ipairs(clients) do
-				pcall(function() client:stop() end)
+				pcall(function() client:stop(true) end)
 			end
 		end
+
+		--- wait for async shutdown to complete before quitting
+		vim.wait(3000, function()
+			return #vim.lsp.get_clients({ name = "mssql_ls", _uninitialized = true }) == 0
+		end)
 
 		if #failures > 0 then
 			vim.schedule(function() vim.cmd.cquit() end)
