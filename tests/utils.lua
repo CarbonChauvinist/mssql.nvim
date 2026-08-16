@@ -796,7 +796,7 @@ M.assert_visual_alignment = function(lines)
 end
 
 --- Runs a function within a mocked environment for logging, input, and LSP calls.
----@param mocks { input_value: string?, client_response: table?, client_error: table? } Mock data configuration.
+---@param mocks { input_value: string?, client_response: table?, client_error: table?, file_exists: boolean?, confirm_choice: integer? } Mock data configuration.
 ---@param func function The test function to run.
 ---@return table captures { logs: string[], cmd: string[], requests: table[] }
 M.run_with_mocks = function(mocks, func)
@@ -807,9 +807,13 @@ M.run_with_mocks = function(mocks, func)
 	local orig_error = utils.log_error
 	local orig_cmd = vim.cmd
 	local orig_get_client = utils.get_lsp_client
+	local orig_fs_stat = vim.uv.fs_stat
+	local orig_confirm = vim.fn.confirm
 
 	---@diagnostic disable: duplicate-set-field
 	vim.fn.input = function() return mocks.input_value end
+	vim.fn.confirm = function() return mocks.confirm_choice or 1 end
+	vim.uv.fs_stat = function() return mocks.file_exists and {} or nil end
 	utils.log_info = function(msg) table.insert(captures.logs, "INFO: " .. msg) end
 	utils.log_error = function(msg) table.insert(captures.logs, "ERROR: " .. msg) end
 	-- ensure full metatable compatibility to allow both vim.cmd.<cmd>() and vim.cmd({ cmd = <cmd> ... })
@@ -847,6 +851,8 @@ M.run_with_mocks = function(mocks, func)
 	utils.log_error = orig_error
 	vim.cmd = orig_cmd
 	utils.get_lsp_client = orig_get_client
+	vim.uv.fs_stat = orig_fs_stat
+	vim.fn.confirm = orig_confirm
 
 	return captures
 end

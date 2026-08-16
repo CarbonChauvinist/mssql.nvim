@@ -3,6 +3,51 @@ local utils = require("mssql.utils")
 
 local M = {}
 
+---Maps a filename extension to the LSP save method and whether to
+---open the file after saving. Returns nil, nil for unsupported extensions.
+---@param fname string
+---@return string? method
+---@return boolean? open_after_save
+local map_extension = function(fname)
+	local icase = fname:lower()
+	if icase:match("%.csv$") then return "query/saveCsv", true end
+	if icase:match("%.json$") then return "query/saveJson", true end
+	if icase:match("%.xml$") then return "query/saveXml", true end
+	if icase:match("%.xlsx?$") then return "query/saveExcel", false end
+	return nil, nil
+end
+
+---Resolves the save target: prompts for a filename,
+---maps its extension, and confirms overwrite
+---@return string? file
+---@return string? method
+---@return boolean? open_after_save
+local get_file_saveas_target = function()
+	local desired_fname = vim.fn.input("Save query results (.csv/.json/.xls/.xlsx/.xml)", "", "file")
+	if not desired_fname or desired_fname == "" then
+		utils.log_error("No file path given")
+		return
+	end
+
+	local method, open_after_save = map_extension(desired_fname)
+	if not method then
+		utils.log_error("File extension not recognized. Enter a file with extension .csv/.json/.xls/.xlsx/.xml")
+		return
+	end
+
+	if vim.uv.fs_stat(desired_fname) then
+		local choice = vim.fn.confirm(
+			string.format("File: %s already exists. Overwrite?", desired_fname),
+			"&Yes\n&No\n&Cancel",
+			2
+		)
+		if choice ~= 1 then return end
+	end
+
+	return desired_fname, method, open_after_save
+end
+
+
 ---@param result_info any
 M.save_query_results_async = function(result_info)
 	utils.wait_for_schedule_async()
@@ -11,9 +56,9 @@ M.save_query_results_async = function(result_info)
 		error("The buffer with the sql query has been closed, can't save query results")
 	end
 
-	local file = vim.fn.input("Save query results (.csv/.json/.xls/.xlsx/.xml)", "", "file")
-	if not file or file == "" then
-		utils.log_error("No file path given")
+	local file, method, open_after_save = get_file_saveas_target()
+	if not file or not method then
+		utils.log_error("No file or method chosen")
 		return
 	end
 
@@ -26,31 +71,16 @@ M.save_query_results_async = function(result_info)
 		Formatted = true,
 	}
 
-	local method
-	local openAfterSave = true
-	local file_icase = file:lower()
-	if file_icase:match("%.csv$") then method = "query/saveCsv"
-	elseif file_icase:match("%.json$") then method = "query/saveJson"
-	elseif file_icase:match("%.xml$") then method = "query/saveXml"
-	elseif file_icase:match("%.xlsx?$") then
-		method = "query/saveExcel"
-		openAfterSave = false
-	else
-		utils.log_error("File extension not recognised. Enter a file with extension .csv/.json/.xls/.xlsx/.xml")
-		return
-	end
-
 	local _, err = utils.lsp_request_async(lsp_client, method, params)
 
 	if err then
 		utils.log_error("Error saving query results")
-		utils.log_error(vim.inspect(err))
 		return
 	end
 
 	utils.log_info("File saved")
 
-	if openAfterSave then
+	if open_after_save then
 		vim.cmd({ cmd = "edit", args = { file } })
 	end
 end
@@ -157,5 +187,7 @@ M.perform_connect_async = function(opts, query_manager, bufnr)
 	end
 	return true
 end
+
+M.map_extension = map_extension
 
 return M
