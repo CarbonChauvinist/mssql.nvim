@@ -97,7 +97,7 @@ end
 ---@param rows string[][]
 ---@param max_width integer
 ---@return string[]
-local pretty_print = function(column_headers, rows, max_width)
+local format_as_md = function(column_headers, rows, max_width)
 	if not column_headers then
 		return { "" }
 	end
@@ -138,7 +138,7 @@ end
 ---Writes formatted lines to the result buffer and configures read-only buffer options.
 ---@param lines string[]
 ---@param bufnr integer
-local display_markdown = function(lines, bufnr)
+local set_display_lines = function(lines, bufnr)
 	-- due to pagination need to make writeable/modifiable at first
 	vim.api.nvim_set_option_value("modifiable", true, { buf = bufnr })
 	vim.api.nvim_set_option_value("readonly", false, { buf = bufnr })
@@ -210,9 +210,9 @@ local fetch_and_render_page = function(bufnr, new_offset)
 			:map(function(i) return i.columnName end)
 			:totable()
 
-		local lines = pretty_print(column_headers, rows, info.max_column_width)
+		local lines = format_as_md(column_headers, rows, info.max_column_width)
 
-		display_markdown(lines, bufnr)
+		set_display_lines(lines, bufnr)
 		utils.request_redrawstatus()
 		utils.log_info(string.format(
 			"Showing rows %d-%d of %d",
@@ -394,7 +394,7 @@ local show_result_set_async = function(ctx)
 	elseif config.results_output_format == "markdown" then
 		extension = "md"
 		filetype = "markdown"
-		lines = pretty_print(column_headers, rows, config.max_column_width)
+		lines = format_as_md(column_headers, rows, config.max_column_width)
 	end
 
 	local owner_buf = vim.fn.bufnr(vim.uri_to_fname(subset_params.ownerUri))
@@ -430,7 +430,7 @@ local show_result_set_async = function(ctx)
 	}
 	vim.b[buf].query_result_info = info
 
-	display_markdown(lines, buf)
+	set_display_lines(lines, buf)
 	config.open_results_in(buf)
 
 	-- set buffer local keymaps for pagination
