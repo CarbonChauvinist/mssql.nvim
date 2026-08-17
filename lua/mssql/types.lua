@@ -73,6 +73,7 @@
 ---@field first_page string?
 ---@field next_page string?
 ---@field last_page string?
+---@field toggle_format string?
 
 ---@class MssqlConfig
 ---@field keymap_prefix string? Set up keymaps with this prefix.

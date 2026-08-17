@@ -92,6 +92,7 @@ local M = {
 		first_page = "<C-M-p>",
 		next_page = "<C-n>",
 		last_page = "<C-M-n>",
+		toggle_format = "gf",
 	},
 
 	-- keymaps for find_objects actions

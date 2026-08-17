@@ -13,7 +13,6 @@ return {
 		mssql.execute_query({ bufnr = buf })
 
 		local res_buf_json, _, results_json = test_utils.res_buf_catcher()
-		local ext_json = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(res_buf_json), ":e")
 		assert(res_buf_json, "JSON results buffer did not appear")
 		local ok, decoded = pcall(vim.json.decode, results_json)
 		assert(ok, "Results content is not valid JSON:\n" .. results_json)
@@ -21,7 +20,6 @@ return {
 		assert(decoded[1].Name ~= nil, "JSON object is missing 'Name' property")
 		assert(decoded[1].Make ~= nil, "JSON object is missing 'Make' property")
 		assert(vim.bo[res_buf_json].filetype == "json", "Results buffer filetype is not 'JSON': " .. " instead is: " .. vim.bo[res_buf_json].filetype)
-		assert(ext_json == "json", "Results buffer extension is not 'json': " .. " instead is: " .. ext_json)
 
 		test_utils.cleanup_results_buffer(res_buf_json)
 
@@ -30,12 +28,10 @@ return {
 		mssql.execute_query({ bufnr = buf })
 
 		local res_buf_csv, _, results_csv = test_utils.res_buf_catcher()
-		local ext_csv = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(res_buf_csv), ":e")
 		assert(res_buf_csv, "CSV results buffer did not appear")
 		assert(results_csv:find("ID,Name,Make,PersonId"), "CSV header is missing or incorrect:\n" .. results_csv)
 		assert(results_csv:find("1,Bob,Merc,1"), "CSV row content is missing or incorrect:\n" .. results_csv)
 		assert(vim.bo[res_buf_csv].filetype == "csv", "Results buffer filetype is not 'csv': " .. "instead is: " .. vim.bo[res_buf_csv].filetype)
-		assert(ext_csv == "csv", "Results buffer extension is not 'csv': " .. " instead is: " .. ext_csv)
 
 		test_utils.cleanup_results_buffer(res_buf_csv)
 
@@ -44,12 +40,10 @@ return {
 		mssql.execute_query({ bufnr = buf })
 
 		local res_buf_text, _, results_text = test_utils.res_buf_catcher()
-		local ext_text = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(res_buf_text), ":e")
 		assert(res_buf_text, "Text results buffer did not appear")
 		assert(not results_text:find("|"), "Text table should not contain Markdown pipes:\n" .. results_text)
 		assert(results_text:find("Bob%s+Merc"), "Text table columns are not formatted correctly:\n" .. results_text)
 		assert(vim.bo[res_buf_text].filetype == "", "Results buffer filetype is not '': " .. "instead is: " .. vim.bo[res_buf_text].filetype)
-		assert(ext_text == "txt", "Results buffer extension is not 'txt': " .. " instead is: " .. ext_text)
 
 		test_utils.cleanup_results_buffer(res_buf_text)
 
