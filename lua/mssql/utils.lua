@@ -499,4 +499,31 @@ M.request_redrawstatus = function()
 	end)
 end
 
+---Builds a 0-indexed document selection range from 1-indexed visual marks,
+---clamping a linewise-visual end column sentinel to the real line length.
+---@param bufnr integer
+---@param start_pos integer[] [bufnum, lnum, col, off] from getpos("'<")
+---@param end_pos integer[] [bufnum, lnum, col, off] from getpos("'>")
+---@return table range { start_line, start_col, end_line, end_col }
+M.build_selection_range = function(bufnr, start_pos, end_pos)
+	local end_line = math.max(0, end_pos[2] - 1)
+	local end_col = math.max(0, end_pos[3] - 1)
+
+	-- Linewise visual mode ("V") leaves the '> column at vim.v.maxcol
+	-- (2147483647) to mean "the whole line". Clamp it to the actual length
+	-- of the last selected line so executeDocumentSelection receives a valid
+	-- endColumn
+	local last_line = vim.api.nvim_buf_get_lines(bufnr, end_line, end_line + 1, false)[1] or ""
+	if end_col > #last_line then
+		end_col = #last_line
+	end
+
+	return {
+		start_line = math.max(0, start_pos[2] - 1),
+		start_col = math.max(0, start_pos[3] - 1),
+		end_line = end_line,
+		end_col = end_col,
+	}
+end
+
 return M

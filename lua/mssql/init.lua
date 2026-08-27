@@ -294,14 +294,9 @@ M.execute_query = utils.async(function(opts)
 		query = utils.get_selected_text(bufnr)
 		local mode = vim.api.nvim_get_mode().mode
 		if mode:match("[vV]") or mode == "\22" then
-			local p_start = vim.fn.get_pos("'<")
+			local p_start = vim.fn.getpos("'<")
 			local p_end = vim.fn.getpos("'>")
-			range = {
-				start_line = math.max(0, p_start[2] - 1),
-				start_col = math.max(0, p_start[3] - 1),
-				end_line = math.max(0, p_end[2] - 1),
-				end_col = math.max(0, p_end[3] -1),
-			}
+			range = utils.build_selection_range(bufnr, p_start, p_end)
 		end
 	end
 
