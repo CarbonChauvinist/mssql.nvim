@@ -282,16 +282,18 @@ M.get_selected_text = function(bufnr)
 	if (bufnr == 0 or bufnr == current_buf) then
 		local mode = vim.api.nvim_get_mode().mode
 		if mode == "v" or mode == "V" or mode == "\22" then -- \22 is Ctrl-V (visual block)
-			-- exit visual mode so the marks are applied
+			-- exit visual mode synchronously so the marks are applied and
+			-- visualmode() reflects the selection type. Send the literal ESC
+			-- byte - :normal! "<esc>" would be parsed as <C-V> and corrupt the buffer.
 			local esc = vim.api.nvim_replace_termcodes("<esc>", true, false, true)
-			vim.api.nvim_feedkeys(esc, "x", false)
+			vim.cmd.normal({ args = { esc }, bang = true })
 
 			local start_pos = vim.fn.getpos("'<")
 			local end_pos = vim.fn.getpos("'>")
 
 			require("mssql.state").set_last_query_range_as_extmarks(bufnr, start_pos, end_pos)
 
-			local lines = vim.fn.getregion(start_pos, end_pos, { mode = vim.fn.visualmode() })
+			local lines = vim.fn.getregion(start_pos, end_pos, { type = vim.fn.visualmode() })
 
 			return table.concat(lines, "\n")
 		end
