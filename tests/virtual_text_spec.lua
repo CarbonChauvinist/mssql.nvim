@@ -60,11 +60,12 @@ return {
 		})
 		vim.api.nvim_win_set_cursor(0, { 1, 0 })
 		mssql.execute_current_statement()
+		local ext, ext1
 		test_utils.poll(function()
-			return get_virtual_text_at_bufnr(buf, ns, 0, 0) ~= nil
+			ext = get_virtual_text_at_bufnr(buf, ns, 0, 0)
+			return ext ~= nil
 		end, { timeout_ms = 5000, interval_ms = 100 })
 
-		local ext = get_virtual_text_at_bufnr(buf, ns, 0, 0)
 		assert(ext ~= nil, "[1] extmark should exist on line 0")
 		assert(ext:match("=> %d+"), "[1] should display scalar number")
 
@@ -78,11 +79,13 @@ return {
 		})
 		vim.api.nvim_win_set_cursor(0, { 2, 0 })
 		mssql.execute_current_statement()
+		ext = nil
+
 		test_utils.poll(function()
-			return get_virtual_text_at_bufnr(buf, ns, 3, 3) ~= nil
+			ext = get_virtual_text_at_bufnr(buf, ns, 3, 3)
+			return ext ~= nil
 		end, { timeout_ms = 5000, interval_ms = 100 })
 
-		ext = get_virtual_text_at_bufnr(buf, ns, 3, 3)
 		assert(ext ~= nil, "[2] extmark should exist on line 3")
 		assert(ext:match("=> %d+"), "[2] should display scalar number")
 
@@ -100,17 +103,17 @@ return {
 			"SELECT count(*) FROM TestDbA.dbo.Person;",
 		})
 		mssql.execute_query({ bufnr = buf })
+		ext, ext1 = nil, nil
 		test_utils.poll(function()
-			return get_virtual_text_at_bufnr(buf, ns, 1, 1) ~= nil
-				and get_virtual_text_at_bufnr(buf, ns, 2, 2) ~= nil
+			ext = get_virtual_text_at_bufnr(buf, ns, 1, 1)
+			ext1 = get_virtual_text_at_bufnr(buf, ns, 2, 2)
+			return ext ~= nil and ext1 ~= nil
 		end, { timeout_ms = 5000, interval_ms = 100 })
 
-		ext = get_virtual_text_at_bufnr(buf, ns, 1, 1)
 		assert(ext ~= nil, "[4a] batch-0 extmark on line 1")
 		assert(ext:match("=> %d+"), "[4a] batch-0 scalar")
-		ext = get_virtual_text_at_bufnr(buf, ns, 2, 2)
-		assert(ext ~= nil, "[4b] batch-1 extmark on line 2")
-		assert(ext:match("=> %d+"), "[4b] batch-1 scalar")
+		assert(ext1 ~= nil, "[4b] batch-1 extmark on line 2")
+		assert(ext1:match("=> %d+"), "[4b] batch-1 scalar")
 
 		-- 5. single batch, 2 scalar results sets (semicolon, no GO)
 		-- result_set_count > 1 -> guard -? results buffers, no virt text
@@ -151,11 +154,12 @@ return {
 		})
 		vim.api.nvim_win_set_cursor(0, { 1, 0 })
 		mssql.execute_virtual_text()
+		ext, ext1 = nil, nil
 		test_utils.poll(function()
-			return get_virtual_text_at_bufnr(buf, ns, 0, 0) ~= nil
+			ext = get_virtual_text_at_bufnr(buf, ns, 0, 0)
+			return ext ~= nil
 		end, { timeout_ms = 5000, interval_ms = 100 })
 
-		ext = get_virtual_text_at_bufnr(buf, ns, 0, 0)
 		assert(ext ~= nil, "[7] execute_virtual_text should place extmark on line 0")
 		assert(ext:match("=> 42"), "[7] should display ' => 42'")
 
@@ -167,11 +171,12 @@ return {
 		vim.api.nvim_win_set_cursor(0, { 1, 0 })
 		vim.cmd.normal({ args = { "V" }, bang = true })
 		mssql.execute_query({ bufnr = buf })
+		ext = nil
 		test_utils.poll(function()
-			return get_virtual_text_at_bufnr(buf, ns, 0, 0) ~= nil
+			ext = get_virtual_text_at_bufnr(buf, ns, 0, 0)
+			return ext ~= nil
 		end, { timeout_ms = 5000, interval_ms = 100 })
 
-		ext = get_virtual_text_at_bufnr(buf, ns, 0, 0)
 		assert(ext ~= nil, "[8] visual selection scalar should show virt text")
 		assert(ext:match("=> 99"), "[8] should display ' => 99'")
 
@@ -192,13 +197,36 @@ return {
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "SELECT NULL" })
 		vim.api.nvim_win_set_cursor(0, { 1, 0 })
 		mssql.execute_current_statement()
+		ext = nil
 		test_utils.poll(function()
-			return get_virtual_text_at_bufnr(buf, ns, 0, 0) ~= nil
+			ext = get_virtual_text_at_bufnr(buf, ns, 0, 0)
+			return ext ~= nil
 		end, { timeout_ms = 5000, interval_ms = 100 })
 
-		ext = get_virtual_text_at_bufnr(buf, ns, 0, 0)
 		assert(ext ~= nil, "[10] NULL scalar should show virt text")
 		assert(ext:match("=> NULL"), "[10] should display ' => NULL', got: " .. tostring(ext))
+
+		-- 11. visual selection on a LATER line -> virt text at the correct
+		-- document-absolute line (regression guard for the executeDocumentSelection
+		-- reporting absolute rather than selection-relative positions)
+		mssql.clear_virtual_text(buf)
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+			"--filler",
+			"",
+			"SELECT 77 AS later_line",
+		})
+		vim.api.nvim_win_set_cursor(0, { 3, 0 })
+		vim.cmd.normal({ args = { "V" }, bang = true })
+		mssql.execute_query({ bufnr = buf })
+		ext = nil
+		test_utils.poll(function()
+			ext = get_virtual_text_at_bufnr(buf, ns, 2, 2)
+			return ext ~= nil
+		end, { timeout_ms = 5000, interval_ms = 100 })
+
+		assert(ext ~= nil, "[11] visual selection scalar on line 3 should place virt text on line 3")
+		assert(ext:match("=> 77"), "[11] should display ' => 77'")
+		assert(get_virtual_text_at_bufnr(buf, ns, 0, 0) == nil, "[11] virt text should NOT be placed on line 1")
 
 		cleanup()
 		test_utils.setup_mssql_async({
