@@ -35,7 +35,7 @@ return {
 
 			vim.api.nvim_win_set_buf(0, res_buf)
 			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-n>", true, true, true), "x", false)
-			test_utils.wait_for_status("Rosws 2%-2 of 3", { bufnr = res_buf })
+			test_utils.wait_for_status("Rows 2%-2 of 3", { bufnr = res_buf })
 
 			local _, _, content = test_utils.res_buf_catcher({ res_buf = res_buf })
 			assert(content and content:find("Ford"), "After pagination, " .. f.format .. " did not reach page 2:\n" .. tostring(content))
