@@ -143,6 +143,8 @@ M.lsp_request_async = function(client, method, params)
 end
 
 -- gets rows from the lsp given some subset parameters
+---@param subset_params SubsetParams
+---@return ResultCell[][]
 M.get_rows_async = function(subset_params)
 	if not (subset_params and subset_params.rowsCount and subset_params.rowsCount > 0) then
 		return {}
@@ -165,7 +167,11 @@ M.get_rows_async = function(subset_params)
 			:map(function(cells)
 				return vim.iter(cells)
 					:map(function(cell)
-						return cell.displayValue
+						return {
+							displayValue = cell.displayValue,
+							invariantCultureDisplayValue = cell.invariantCultureDisplayValue,
+							isNull = cell.isNull,
+						}
 					end)
 					:totable()
 			end)

@@ -3,21 +3,26 @@ local utils = require("mssql.utils")
 local M = {}
 
 ---Truncates long cells and replaces literal newlines with formatted string representations.
----@param tbl string[][]
+---@param rows ResultCell[][]
 ---@param limit integer
-local sanitise = function(tbl, limit)
-	for _, record in ipairs(tbl) do
-		for index, value in ipairs(record) do
-			local str = tostring(value)
+---@return string[][] sanitised rows with truncation and escaped newlines
+local sanitise = function(rows, limit)
+	local sanitised = {}
+	for _, record in ipairs(rows) do
+		local new_record = {}
+		for _, cell in ipairs(record) do
+			local str = tostring(cell.displayValue)
 			-- truncate
 			if vim.fn.strdisplaywidth(str) > limit then
 				str = str:sub(1, limit) .. "..."
 			end
 			-- replace newline chars with `\n`. Backticks to look good in markdown
 			str = str:gsub("\n", "`\\n`")
-			record[index] = str
+			table.insert(new_record, str)
 		end
+		table.insert(sanitised, new_record)
 	end
+	return sanitised
 end
 
 ---Calculates the maximum display width required for a given column.
@@ -94,21 +99,18 @@ end
 
 ---Formats column headers and rows into printable Markdown lines.
 ---@param column_headers string[]
----@param rows string[][]
+---@param rows ResultCell[][]
 ---@param max_width integer
 ---@return string[]
 local format_as_md = function(column_headers, rows, max_width)
-	if not column_headers then
-		return { "" }
-	end
+	if not column_headers then return { "" } end
 
-	sanitise(rows, max_width)
-
-	local widths = column_widths(column_headers, rows)
+	local sanitised = sanitise(rows, max_width)
+	local widths = column_widths(column_headers, sanitised)
 	local divider = header_divider(widths)
 
 	local lines = { row_to_string(column_headers, widths), divider }
-	for _, row in ipairs(rows) do
+	for _, row in ipairs(sanitised) do
 		table.insert(lines, row_to_string(row, widths))
 	end
 
@@ -155,14 +157,14 @@ end
 
 ---Formats query results as a classic space-aligned CLI text table (like sqlcmd)
 ---@param column_headers string[]
----@param rows string[][]
+---@param rows ResultCell[][]
 ---@param max_width integer
 ---@return string[] lines
 local format_as_text = function(column_headers, rows, max_width)
 	if not column_headers then return { "" } end
 
-	sanitise(rows, max_width)
-	local widths = column_widths(column_headers, rows)
+	local sanitised = sanitise(rows, max_width)
+	local widths = column_widths(column_headers, sanitised)
 
 	-- headers: "ID   Make     PersonId"
 	local header_cells = {}
@@ -177,7 +179,7 @@ local format_as_text = function(column_headers, rows, max_width)
 		table.concat(divider_cells, "  ")
 	}
 
-	for _, row in ipairs(rows) do
+	for _, row in ipairs(sanitised) do
 		local row_cells = {}
 		for idx, val in ipairs(row) do
 			table.insert(row_cells, right_pad(val, widths[idx], " "))
@@ -190,7 +192,7 @@ end
 
 
 ---Escapes a value for safe CSV representation
----@params val any
+---@param val string?
 ---@return string
 local csv_escape = function(val)
 	val = tostring(val or "")
@@ -202,7 +204,7 @@ end
 
 ---Formats query results as comma-separated values (CSV)
 ---@param column_headers string[]
----@param rows string[][]
+---@param rows ResultCell[][]
 ---@return string[] lines
 local format_as_csv = function(column_headers, rows)
 	if not column_headers then return { "" } end
@@ -219,8 +221,8 @@ local format_as_csv = function(column_headers, rows)
 	-- rows: "1,Merc,1"
 	for _, row in ipairs(rows) do
 		local row_cells = {}
-		for _, val in ipairs(row) do
-			table.insert(row_cells, csv_escape(val))
+		for _, cell in ipairs(row) do
+			table.insert(row_cells, csv_escape(cell.displayValue))
 		end
 		table.insert(lines, table.concat(row_cells, ","))
 	end
@@ -228,16 +230,40 @@ local format_as_csv = function(column_headers, rows)
 	return lines
 end
 
----Converts columns and rows into a formatted JSON string
+---SQL data types whose values should be emitted as JSON numbers, not strings.
+local numeric_types = {
+	bigint = true, int = true, smallint = true, tinyint = true,
+	decimal = true, numeric = true, float = true, real = true,
+	money = true, smallmoney = true, bit = true,
+}
+
+---Converts columns and rows into a formatted JSON string, emitting numeric
+---columns as JSON number rather than quoted strings.
 ---@param column_headers string[]
----@param rows string[][]
+---@param rows ResultCell[][]
+---@param max_width integer
+---@param column_info ColumnInfo[]|nil ColumnInfo entries, used to detect numeric columns
 ---@return string[] lines
-local format_as_json = function(column_headers, rows)
+local format_as_json = function(column_headers, rows, _max_width, column_info)
 	local objects = {}
 	for _, row in ipairs(rows) do
 		local obj = {}
 		for idx, col in ipairs(column_headers) do
-			obj[col] = row[idx]
+			local cell = row[idx]
+			local meta = column_info and column_info[idx]
+			if cell.isNull then
+				obj[col] = vim.NIL
+			elseif meta and numeric_types[meta.dataTypeName] then
+				-- int/bigint report invariantCultureDisplayValue as null;
+				-- decimal/money report it as the culture-invariant number.
+				local num_str = cell.invariantCultureDisplayValue
+				if num_str == nil or num_str == vim.NIL then
+					num_str = cell.displayValue
+				end
+				obj[col] = tonumber(num_str) or num_str
+			else
+				obj[col] = cell.displayValue
+			end
 		end
 		table.insert(objects, obj)
 	end
@@ -268,16 +294,17 @@ local format_specs = {
 ---Dispatches to the formatter matching the given format name.
 ---@param format string
 ---@param column_headers string[]
----@param rows string[][]
+---@param rows ResultCell[][]
 ---@param max_width integer
+---@param column_info ColumnInfo[]?
 ---@return string filetype
 ---@return string[] lines
-local format_results = function(format, column_headers, rows, max_width)
+local format_results = function(format, column_headers, rows, max_width, column_info)
 	-- markdown is the default fallback for unknown or unset passed formats
 	local spec = format_specs[format] or format_specs["markdown"]
 
 	return spec.filetype,
-		spec.formatter(column_headers, rows, max_width)
+		spec.formatter(column_headers, rows, max_width, column_info)
 end
 
 ---Renders the current page of a results buffer in its stored format
@@ -301,7 +328,7 @@ local render_page = function(bufnr, info)
 			:map(function(i) return i.columnName end)
 			:totable()
 
-		local filetype, lines = format_results(info.format, column_headers, rows, info.max_column_width)
+		local filetype, lines = format_results(info.format, column_headers, rows, info.max_column_width, info.columnInfo)
 		vim.api.nvim_set_option_value("filetype", filetype, { buf = bufnr })
 
 		set_display_lines(lines, bufnr)
@@ -404,12 +431,13 @@ local show_result_set_async = function(ctx)
 			target_line = vim.api.nvim_win_get_cursor(0)[1] - 1
 		end
 
-		local scalar_val = tostring(rows[1][1] or "NULL")
+		local cell = rows[1] and rows[1][1]
+		local scalar_val = tostring((cell and not cell.isNull and cell.displayValue) or "NULL")
 		require("mssql.ui").set_virtual_text(owner_buf, target_line, scalar_val)
 		return
 	end
 
-	local filetype, lines = format_results(config.results_output_format, column_headers, rows, config.max_column_width)
+	local filetype, lines = format_results(config.results_output_format, column_headers, rows, config.max_column_width, result_set_summary.columnInfo)
 
 	local owner_buf = vim.fn.bufnr(vim.uri_to_fname(subset_params.ownerUri))
 	local qm = require("mssql.state").get_query_manager(owner_buf)

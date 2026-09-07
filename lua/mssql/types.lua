@@ -272,6 +272,12 @@
 
 ---@class ColumnInfo
 ---@field columnName string
+---@field dataTypeName string The SQL data type name (e.g. "int", "bigint", "nvarchar")
+
+---@class ResultCell
+---@field displayValue string? The culture-formatted display value (nil for NULL)
+---@field invariantCultureDisplayValue string? The culture-invariant value (null for already-invariant types)
+---@field isNull boolean Whether the cell value is SQL NULL
 
 ---@class SubsetParams
 ---@field ownerUri string
