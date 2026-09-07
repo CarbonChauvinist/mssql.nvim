@@ -291,12 +291,13 @@ M.execute_query = utils.async(function(opts)
 			vim.cmd.normal("gv")
 		end
 	elseif not opts.current_statement and not opts.rerun_last then
-		query = utils.get_selected_text(bufnr)
 		local mode = vim.api.nvim_get_mode().mode
-		if mode:match("[vV]") or mode == "\22" then
+		local is_visual = mode:match("[vV]") or mode == "\22"
+		query = utils.get_selected_text(bufnr) -- exits visual mode, sets marks
+		if is_visual then
 			local p_start = vim.fn.getpos("'<")
 			local p_end = vim.fn.getpos("'>")
-			range = utils.build_selection_range(bufnr, p_start, p_end)
+			range = utils.build_selection_range(bufnr, p_start, p_end, vim.fn.visualmode())
 		end
 	end
 
