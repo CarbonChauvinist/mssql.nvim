@@ -247,12 +247,13 @@ local numeric_types = {
 local format_as_json = function(column_headers, rows, _max_width, column_info)
 	local objects = {}
 	for _, row in ipairs(rows) do
-		local obj = {}
+		local fields = {}
 		for idx, col in ipairs(column_headers) do
 			local cell = row[idx]
 			local meta = column_info and column_info[idx]
+			local value
 			if cell.isNull then
-				obj[col] = vim.NIL
+				value = vim.NIL
 			elseif meta and numeric_types[meta.dataTypeName] then
 				-- int/bigint report invariantCultureDisplayValue as null;
 				-- decimal/money report it as the culture-invariant number.
@@ -260,15 +261,16 @@ local format_as_json = function(column_headers, rows, _max_width, column_info)
 				if num_str == nil or num_str == vim.NIL then
 					num_str = cell.displayValue
 				end
-				obj[col] = tonumber(num_str) or num_str
+				value = tonumber(num_str) or num_str
 			else
-				obj[col] = cell.displayValue
+				value = cell.displayValue
 			end
+			table.insert(fields, vim.json.encode(col) .. ":" .. vim.json.encode(value))
 		end
-		table.insert(objects, obj)
+		table.insert(objects, "{" .. table.concat(fields, ",") .. "}")
 	end
 
-	local raw_json = vim.json.encode(objects)
+	local raw_json = "[" .. table.concat(objects, ",") .. "]"
 
 	local success, formatted = pcall(function()
 		if vim.fn.executable("jq") == 1 then
