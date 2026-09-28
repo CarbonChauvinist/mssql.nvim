@@ -48,8 +48,38 @@ return {
 		check_save("test.xlsx", function(c)
 			assert(#c.requests == 1, "Should make LSP request")
 			assert(c.requests[1].method == "query/saveExcel", "Wrong method")
+			assert(c.requests[1].params.FreezeHeaderRow == false, "FreezeHeaderRow should default to false")
+			assert(c.requests[1].params.BoldHeaderRow == false, "BoldHeaderRow should default to false")
+			assert(c.requests[1].params.AutoFilterHeaderRow == false, "AutoFilterHeaderRow should default to false")
+			assert(c.requests[1].params.AutoSizeColumns == false, "AutoSizeColumns should default to false")
 			assert(not has_cmd(c.cmds, "edit", "test.xlsx"), "Should NOT edit xlsx")
 		end)
+
+
+		-- test Excel save with custom options enabled (true)
+		test_utils.setup_mssql_async({
+			save_results = {
+				excel = {
+					freeze_header_row = true,
+					bold_header_row = true,
+					auto_filter_header_row = true,
+					auto_size_columns = true,
+				},
+			},
+		})
+
+		check_save("test_configured.xlsx", function(c)
+			assert(#c.requests == 1, "Should make LSP request")
+			assert(c.requests[1].method == "query/saveExcel", "Wrong method")
+			assert(c.requests[1].params.FreezeHeaderRow == true, "FreezeHeaderRow should be true")
+			assert(c.requests[1].params.BoldHeaderRow == true, "BoldHeaderRow should be true")
+			assert(c.requests[1].params.AutoFilterHeaderRow == true, "AutoFilterHeaderRow should be true")
+			assert(c.requests[1].params.AutoSizeColumns == true, "AutoSizeColumns should be true")
+			assert(c.requests[1].params.IncludeHeaders == true, "IncludeHeaders should be true")
+			assert(not has_cmd(c.cmds, "edit", "test_configured.xlsx"), "Should NOT edit xlsx")
+		end)
+
+		test_utils.setup_mssql_async()
 
 		-- invalid extension
 		check_save("test.txt", function(c)
