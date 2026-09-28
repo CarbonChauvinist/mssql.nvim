@@ -3,7 +3,21 @@ local utils = require("mssql.utils")
 
 local M = {}
 
----@param result_info any
+---Build Excel request parameters merging base options with configuration
+---@param base_params MssqlSaveResultsRequestParams
+---@param excel_config? MssqlSaveAsExcelConfig
+---@return MssqlSaveResultsRequestParams
+local build_excel_params = function(base_params, excel_config)
+	excel_config = excel_config or {}
+	return vim.tbl_extend("force", base_params, {
+		FreezeHeaderRow = excel_config.freeze_header_row or false,
+		BoldHeaderRow = excel_config.bold_header_row or false,
+		AutoFilterHeaderRow = excel_config.auto_filter_header_row or false,
+		AutoSizeColumns = excel_config.auto_size_columns or false,
+	})
+end
+
+---@param result_info QueryResultInfo
 M.save_query_results_async = function(result_info)
 	utils.wait_for_schedule_async()
 	local success, lsp_client = pcall(utils.get_lsp_client, result_info.ownerUri)
@@ -17,13 +31,17 @@ M.save_query_results_async = function(result_info)
 		return
 	end
 
+	local conf = state.get_config()
+	local save_conf = conf and conf.save_results or {}
+
+	---@type MssqlSaveResultsRequestParams
 	local params = {
 		FilePath = file,
 		BatchIndex = result_info.batchIndex,
 		ResultSetIndex = result_info.resultSetIndex,
 		OwnerUri = result_info.ownerUri,
-		IncludeHeaders = true,
-		Formatted = true,
+		IncludeHeaders = save_conf.include_headers ~= false,
+		Formatted = save_conf.formatted ~= false,
 	}
 
 	local method
@@ -34,12 +52,23 @@ M.save_query_results_async = function(result_info)
 	elseif file:match("%.xlsx?$") then
 		method = "query/saveExcel"
 		openAfterSave = false
+		params = build_excel_params(params, save_conf.excel)
 	else
 		utils.log_error("File extension not recognised. Enter a file with extension .csv/.json/.xls/.xlsx/.xml")
 		return
 	end
 
 	local _, err = utils.lsp_request_async(lsp_client, method, params)
+
+	-- gracefully handler missing native SkiaSharp dependency
+	if err and method == "query/saveExcel" and params.AutoSizeColumns then
+		local err_msg = tostring(err.message or vim.inspect(err))
+		if err_msg:match("libSkiaSharp") or err_msg:match("SkiaSharp") or err_msg:match("DllNotFoundException") then
+			utils.log_warn("Excel auto-sizing requires the native 'libSkiaSharp' library on Linux (e.g. 'extra/skia-sharp' on Arch Linux)." .. "Retrying export without auto-sized columns...")
+			params.AutoSizeColumns = false
+			_, err = utils.lsp_request_async(lsp_client, method, params)
+		end
+	end
 
 	if err then
 		utils.log_error("Error saving query results")
