@@ -75,7 +75,33 @@
 ---@field last_page string?
 ---@field toggle_format string?
 
+---@class MssqlSaveAsExcelConfig
+---@field freeze_header_row? boolean Freeze header row (default: false)
+---@field bold_header_row? boolean Bold header row (default: false)
+---@field auto_filter_header_row? boolean Enable auto filter on header row (default: false)
+---@field auto_size_columns? boolean Auto size columns based on cell text (default: false)
+
+---@class MssqlSaveResultsConfig
+---@field include_headers? boolean Include column headers (default: true)
+---@field formatted? boolean Format output where applicable (default: true)
+---@field excel? MssqlSaveAsExcelConfig Excel-specific save options
+
+---@class MssqlSaveResultsRequestParams
+---@field FilePath string
+---@field BatchIndex integer
+---@field ResultSetIndex integer
+---@field OwnerUri string
+---@field IncludeHeaders boolean
+---@field Formatted boolean
+
+---@class MssqlSaveResultsExcelRequestParams: MssqlSaveResultsRequestParams
+---@field FreezeHeaderRow? boolean
+---@field BoldHeaderRow? boolean
+---@field AutoFilterHeaderRow? boolean
+---@field AutoSizeColumns? boolean
+
 ---@class MssqlConfig
+---@field save_results? MssqlSaveResultsConfig Options when saving query results
 ---@field keymap_prefix string? Set up keymaps with this prefix.
 ---@field open_results_in ("split"|"vsplit"|"current_window"|fun(bufnr: integer))? How to open the results buffer.
 ---@field results_output_format ("markdown"|"json"|"csv"|"text")? How results are displayed in results buffer.
@@ -102,6 +128,7 @@
 ---@field sts_version_sha256 string? Custom SQL Tools Service binary SHA256
 
 ---@class MssqlOptions : MssqlConfig
+---@field save_results MssqlSaveResultsConfig
 ---@field keymap_prefix string
 ---@field open_results_in ("split"|"vsplit"|"current_window"|fun(bufnr: integer))
 ---@field display_scalar_as_virtual_text boolean

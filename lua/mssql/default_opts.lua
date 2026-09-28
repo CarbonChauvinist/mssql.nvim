@@ -26,6 +26,19 @@ local M = {
 	-- Automatically display single scalar results (1 row x 1 col) as inline virtual text (default false)
 	display_scalar_as_virtual_text = false,
 
+	-- Options when saving query results to a file
+	---@type MssqlSaveResultsConfig
+	save_results = {
+		include_headers = true,
+		formatted = true,
+		excel = {
+			freeze_header_row = false,
+			bold_header_row = false,
+			auto_filter_header_row = false,
+			auto_size_columns = false, -- Note requires native 'libSkiaSharp' (e.g. 'extra/skia-sharp' on Arch Linux).
+		},
+	},
+
 	--[[ Where to view messages sent from sql server (eg when executing queries)
   Valid options are:
   "notification"                        - View as a vim notification
