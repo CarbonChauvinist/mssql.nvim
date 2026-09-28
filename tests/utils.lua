@@ -83,8 +83,13 @@ end
 ---@return integer bufnr
 M.init_test_harness = function()
 	if not M.harness_buf_id or not vim.api.nvim_buf_is_valid(M.harness_buf_id) then
-		local buf = vim.api.nvim_create_buf(false, true)
-		vim.api.nvim_buf_set_name(buf, vim.fs.joinpath(vim.loop.cwd(), "dummy_test_harness.sql"))
+		local harness_path = vim.fs.joinpath(vim.loop.cwd(), "dummy_test_harness.sql")
+		local existing = vim.fn.bufnr(harness_path)
+		local buf = (existing ~= -1 and vim.api.nvim_buf_is_valid(existing)) and existing or vim.api.nvim_create_buf(false, true)
+
+		if buf ~= existing then
+			vim.api.nvim_buf_set_name(buf, harness_path)
+		end
 		vim.api.nvim_set_option_value("filetype", "sql", { buf = buf })
 		M.harness_buf_id = buf
 	end

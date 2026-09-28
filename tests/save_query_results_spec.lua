@@ -1,5 +1,5 @@
 local mssql = require("mssql")
-local test_utils = require("tests/utils")
+local test_utils = require("tests.utils")
 
 ---Explores safe table syntax of `vim.cmd` call to confirm cmd and presence of args
 ---@param cmds table
